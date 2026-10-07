@@ -1,6 +1,7 @@
 import streamlit as st
 import altair as alt
 import os
+import hmac
 import re
 import requests
 import sqlite3
@@ -41,6 +42,63 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 [data-testid="stDataFrame"]{border:1px solid #CFDFD9;border-radius:7px;overflow:hidden}
 hr{border-color:#D4E3DC}
 </style>''', unsafe_allow_html=True)
+
+# Password gate: configure APP_PASSWORD in this app's Streamlit Secrets.
+def _etf_app_password():
+    try:
+        value = st.secrets.get('APP_PASSWORD', '')
+        return value if isinstance(value, str) else ''
+    except Exception:
+        return ''
+
+
+def _etf_check_password():
+    expected = _etf_app_password()
+    entered = str(st.session_state.get('_etf_password', ''))
+    accepted = bool(expected) and hmac.compare_digest(
+        entered.encode('utf-8'), expected.encode('utf-8')
+    )
+    st.session_state['_etf_authenticated'] = accepted
+    st.session_state['_etf_login_error'] = not accepted
+    st.session_state['_etf_password'] = ''
+
+
+def _etf_logout():
+    # Clear per-session selections and results together with authentication.
+    for key in list(st.session_state):
+        del st.session_state[key]
+
+
+st.session_state.setdefault('_etf_authenticated', False)
+st.session_state.setdefault('_etf_login_error', False)
+
+if not _etf_app_password():
+    st.error('APP_PASSWORD가 설정되지 않았습니다. 이 앱의 Streamlit Secrets에 APP_PASSWORD를 추가해 주세요.')
+    st.stop()
+
+if not st.session_state['_etf_authenticated']:
+    st.markdown('''
+    <div style="max-width:430px;margin:11vh auto 22px;text-align:center;">
+      <div style="font-size:34px;font-weight:950;color:#008878;">ETF Finder</div>
+      <div style="margin-top:7px;color:#536F64;font-size:13px;font-weight:650;">Private Investment Dashboard</div>
+      <div style="margin-top:4px;color:#60766E;font-size:11px;">Designed &amp; Built by K.H. Ahn</div>
+    </div>''', unsafe_allow_html=True)
+    _login_left, _login_center, _login_right = st.columns([1, 1.15, 1])
+    with _login_center:
+        with st.form('_etf_login_form'):
+            st.text_input('비밀번호', type='password', key='_etf_password',
+                          placeholder='비밀번호를 입력하세요')
+            st.form_submit_button('🔐 로그인', type='primary',
+                                  use_container_width=True, on_click=_etf_check_password)
+        if st.session_state.get('_etf_login_error', False):
+            st.error('비밀번호가 올바르지 않습니다.')
+    st.stop()
+
+_login_spacer, _logout_col = st.columns([5, 1])
+with _logout_col:
+    st.button('🔒 로그아웃', key='_etf_logout_button',
+              use_container_width=True, on_click=_etf_logout)
+
 
 st.markdown('''<div class="hero"><h1>🧭 ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
 
