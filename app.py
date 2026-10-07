@@ -100,7 +100,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 HanaV ETF finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
