@@ -1,4 +1,5 @@
 import streamlit as st
+import altair as alt
 import os
 import re
 import requests
@@ -11,28 +12,34 @@ st.set_page_config(page_title='ETF Finder', page_icon='🧭', layout='wide')
 
 st.markdown('''
 <style>
-.stApp {background:#07100d;color:#f4fbf8}
+:root {color-scheme:light;--primary-color:#008878;--background-color:#F4F8F7;--secondary-background-color:#EDF5F2;--text-color:#203D35}
+.stApp,[data-testid="stAppViewContainer"]{background:#F4F8F7;color:#203D35}
 .block-container{max-width:1500px;padding-top:1rem}
-.hero{background:linear-gradient(100deg,#0a2118,#102a20);border:1px solid #00b873;border-left:6px solid #20e99a;padding:18px 22px;border-radius:10px;margin-bottom:14px}
-.hero h1{margin:0;color:white;font-size:30px}.hero p{margin:6px 0 0;color:#a9c5ba}
-.step{background:#0d1814;border:1px solid #29483e;border-radius:9px;padding:10px 12px;margin:5px 0;color:#dcebe5;font-weight:750}
-.result{background:#0d1713;border:1px solid #315b4c;border-left:4px solid #00b873;border-radius:9px;padding:12px;margin:8px 0}
-.muted{color:#8fa69d;font-size:12px}
-
-/* 테마 매핑 다시 생성: 흰 배경 제거 */
-.stButton > button[kind="secondary"],
-button[data-testid="stBaseButton-secondary"]{
-    background:transparent !important;
-    color:#dcebe5 !important;
-    border:1px solid #315b4c !important;
-    box-shadow:none !important;
-}
-.stButton > button[kind="secondary"]:hover,
-button[data-testid="stBaseButton-secondary"]:hover{
-    background:transparent !important;
-    color:#ffffff !important;
-    border-color:#4d7a6a !important;
-}
+header[data-testid="stHeader"]{background:#F4F8F7}
+.hero{background:linear-gradient(105deg,#005B51 0%,#008878 65%,#DCEFE6 100%);border:1px solid #B8D6CA;border-left:6px solid #008878;padding:18px 22px;border-radius:10px;margin-bottom:14px;box-shadow:0 2px 8px rgba(20,65,47,.06)}
+.hero h1{margin:0;color:white!important;font-size:30px}.hero p{margin:6px 0 0;color:#E5F3EE!important}
+.step{background:linear-gradient(90deg,#DCEFE6,#F4F9F6);border:1px solid #C4DCD0;border-radius:9px;padding:10px 12px;margin:5px 0;color:#175447;font-weight:750}
+.result{background:white;border:1px solid #CFDFD9;border-left:4px solid #008878;border-radius:9px;padding:12px;margin:8px 0}
+.muted,[data-testid="stCaptionContainer"]{color:#60766E;font-size:12px}
+h1,h2,h3,h4,[data-testid="stWidgetLabel"],[data-testid="stWidgetLabel"] p,[data-testid="stMarkdownContainer"]{color:#203D35}
+section[data-testid="stSidebar"]{background:#EDF5F2;border-right:1px solid #CFDFD9}
+[data-baseweb="input"],[data-baseweb="input"]>div,[data-baseweb="select"]>div,[data-baseweb="textarea"],[data-baseweb="popover"],[role="listbox"],[role="option"]{background:white!important;color:#203D35!important}
+input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:#008878}
+[data-baseweb="select"] svg{fill:#536F64}
+.stButton>button[kind="secondary"],button[data-testid="stBaseButton-secondary"]{background:#FFFFFF!important;color:#205D4D!important;border:1px solid #C8DBD3!important;box-shadow:none!important}
+.stButton>button[kind="secondary"]:hover,button[data-testid="stBaseButton-secondary"]:hover{background:#E5F2EC!important;color:#006F62!important;border-color:#008878!important}
+.stButton>button[kind="primary"],button[data-testid="stBaseButton-primary"]{background:#008878!important;color:white!important;border:1px solid #008878!important;font-weight:750}
+.stButton>button[kind="primary"] p{color:white!important}
+.stButton>button[kind="primary"]:hover{background:#006F62!important}
+[data-testid="stMetric"]{background:white;border:1px solid #D4E3DC;border-top:3px solid #008878;border-radius:9px;padding:12px}
+[data-testid="stMetricLabel"],[data-testid="stMetricValue"]{color:#203D35}
+[data-testid="stExpander"]{background:white;border:1px solid #CFDFD9;border-radius:9px}
+[data-testid="stExpander"] summary{color:#203D35}
+[data-baseweb="tab"]{color:#536F64}
+[data-baseweb="tab"][aria-selected="true"]{background:#E3F1EB;color:#007B69}
+[data-baseweb="tab-highlight"]{background:#008878}
+[data-testid="stDataFrame"]{border:1px solid #CFDFD9;border-radius:7px;overflow:hidden}
+hr{border-color:#D4E3DC}
 </style>''', unsafe_allow_html=True)
 
 st.markdown('''<div class="hero"><h1>🧭 ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
@@ -1696,10 +1703,15 @@ def render_etf_detail(etf_code,key_prefix='detail'):
                 m1.metric('최근 종가',f'{last:,.0f}원',f'{change:+.2f}%')
                 m2.metric('조회 데이터',f'{len(p):,}일')
 
-                st.line_chart(
-                    p.set_index('날짜')[['종가']],
-                    use_container_width=True,
-                    height=390
+                st.altair_chart(
+                    alt.Chart(p).mark_line(color='#008878').encode(
+                        x=alt.X('날짜:T', title='날짜'),
+                        y=alt.Y('종가:Q', title='종가 (원)', scale=alt.Scale(zero=False)),
+                        tooltip=[alt.Tooltip('날짜:T'), alt.Tooltip('종가:Q', format=',.0f')]
+                    ).properties(height=390, background='white').configure_axis(
+                        labelColor='#536F64', titleColor='#203D35', gridColor='#E1EBE6'
+                    ).configure_view(stroke='#CFDFD9').interactive(),
+                    use_container_width=True, theme=None
                 )
 
                 st.caption(
@@ -1755,10 +1767,16 @@ def render_etf_detail(etf_code,key_prefix='detail'):
                 chart_top=chart_top.sort_values('weight',ascending=False)
 
                 if not chart_top.empty:
-                    st.bar_chart(
-                        chart_top.set_index('holding_name')['weight'],
-                        use_container_width=True,
-                        height=300
+                    st.altair_chart(
+                        alt.Chart(chart_top).mark_bar(color='#008878').encode(
+                            x=alt.X('holding_name:N', sort='-y', title='구성종목'),
+                            y=alt.Y('weight:Q', title='편입비중 (%)'),
+                            tooltip=[alt.Tooltip('holding_name:N', title='구성종목'),
+                                     alt.Tooltip('weight:Q', title='비중 (%)', format='.2f')]
+                        ).properties(height=300, background='white').configure_axis(
+                            labelColor='#536F64', titleColor='#203D35', gridColor='#E1EBE6'
+                        ).configure_view(stroke='#CFDFD9'),
+                        use_container_width=True, theme=None
                     )
                     st.caption('상위 구성종목 편입비중(%) · 비중 높은 순')
 
