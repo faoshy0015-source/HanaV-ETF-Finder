@@ -310,6 +310,444 @@ TREE = {
     }
 }
 
+
+# =========================================================
+# US-LISTED ETF CATALOG
+# - 국내 KRX ETF DB와 별개로 미국 상장 대표 ETF를 테크트리에 통합 표시
+# - 가격/상위 구성종목은 선택 시 yfinance로 조회 (API Key 불필요)
+# =========================================================
+
+US_ETF_CATALOG = [
+    # 미국 대표지수
+    {'ticker':'SPY','name':'SPDR S&P 500 ETF Trust','issuer':'State Street','index':'S&P 500','themes':[('주식','미국 대표지수',['S&P500','미국 대형주']),('주식','글로벌·국가',['미국'])]},
+    {'ticker':'VOO','name':'Vanguard S&P 500 ETF','issuer':'Vanguard','index':'S&P 500','themes':[('주식','미국 대표지수',['S&P500','미국 대형주']),('주식','글로벌·국가',['미국'])]},
+    {'ticker':'IVV','name':'iShares Core S&P 500 ETF','issuer':'BlackRock','index':'S&P 500','themes':[('주식','미국 대표지수',['S&P500','미국 대형주']),('주식','글로벌·국가',['미국'])]},
+    {'ticker':'QQQ','name':'Invesco QQQ Trust','issuer':'Invesco','index':'NASDAQ-100','themes':[('주식','미국 대표지수',['NASDAQ100','미국 대형주']),('주식','빅테크',['전체']),('주식','글로벌·국가',['미국'])]},
+    {'ticker':'QQQM','name':'Invesco NASDAQ 100 ETF','issuer':'Invesco','index':'NASDAQ-100','themes':[('주식','미국 대표지수',['NASDAQ100','미국 대형주']),('주식','빅테크',['전체'])]},
+    {'ticker':'DIA','name':'SPDR Dow Jones Industrial Average ETF Trust','issuer':'State Street','index':'Dow Jones Industrial Average','themes':[('주식','미국 대표지수',['다우30','미국 대형주'])]},
+    {'ticker':'IWM','name':'iShares Russell 2000 ETF','issuer':'BlackRock','index':'Russell 2000','themes':[('주식','미국 대표지수',['러셀2000','미국 중소형주'])]},
+    {'ticker':'VTWO','name':'Vanguard Russell 2000 ETF','issuer':'Vanguard','index':'Russell 2000','themes':[('주식','미국 대표지수',['러셀2000','미국 중소형주'])]},
+    {'ticker':'VTI','name':'Vanguard Total Stock Market ETF','issuer':'Vanguard','index':'CRSP US Total Market','themes':[('주식','미국 대표지수',['미국 대형주','미국 중소형주']),('주식','글로벌·국가',['미국'])]},
+
+    # 글로벌 / 국가
+    {'ticker':'VT','name':'Vanguard Total World Stock ETF','issuer':'Vanguard','index':'FTSE Global All Cap','themes':[('주식','글로벌·국가',['글로벌','선진국','신흥국'])]},
+    {'ticker':'ACWI','name':'iShares MSCI ACWI ETF','issuer':'BlackRock','index':'MSCI ACWI','themes':[('주식','글로벌·국가',['글로벌','선진국','신흥국'])]},
+    {'ticker':'EFA','name':'iShares MSCI EAFE ETF','issuer':'BlackRock','index':'MSCI EAFE','themes':[('주식','글로벌·국가',['선진국'])]},
+    {'ticker':'EEM','name':'iShares MSCI Emerging Markets ETF','issuer':'BlackRock','index':'MSCI Emerging Markets','themes':[('주식','글로벌·국가',['신흥국'])]},
+    {'ticker':'MCHI','name':'iShares MSCI China ETF','issuer':'BlackRock','index':'MSCI China','themes':[('주식','글로벌·국가',['중국'])]},
+    {'ticker':'FXI','name':'iShares China Large-Cap ETF','issuer':'BlackRock','index':'FTSE China 50','themes':[('주식','글로벌·국가',['중국'])]},
+    {'ticker':'EWJ','name':'iShares MSCI Japan ETF','issuer':'BlackRock','index':'MSCI Japan','themes':[('주식','글로벌·국가',['일본'])]},
+    {'ticker':'INDA','name':'iShares MSCI India ETF','issuer':'BlackRock','index':'MSCI India','themes':[('주식','글로벌·국가',['인도'])]},
+    {'ticker':'VNM','name':'VanEck Vietnam ETF','issuer':'VanEck','index':'MarketVector Vietnam Local','themes':[('주식','글로벌·국가',['베트남'])]},
+    {'ticker':'VGK','name':'Vanguard FTSE Europe ETF','issuer':'Vanguard','index':'FTSE Developed Europe','themes':[('주식','글로벌·국가',['유럽','선진국'])]},
+    {'ticker':'EWT','name':'iShares MSCI Taiwan ETF','issuer':'BlackRock','index':'MSCI Taiwan 25/50','themes':[('주식','글로벌·국가',['대만'])]},
+
+    # 빅테크 / AI / 반도체
+    {'ticker':'MAGS','name':'Roundhill Magnificent Seven ETF','issuer':'Roundhill','index':'Magnificent Seven','themes':[('주식','빅테크',['Magnificent 7','플랫폼']),('주식','AI',['AI 플랫폼'])]},
+    {'ticker':'XLK','name':'Technology Select Sector SPDR Fund','issuer':'State Street','index':'S&P Technology Select Sector','themes':[('주식','빅테크',['소프트웨어','플랫폼']),('주식','AI',['AI 소프트웨어'])]},
+    {'ticker':'VGT','name':'Vanguard Information Technology ETF','issuer':'Vanguard','index':'MSCI US IMI Information Technology 25/50','themes':[('주식','빅테크',['소프트웨어','플랫폼']),('주식','AI',['AI 소프트웨어'])]},
+    {'ticker':'IGV','name':'iShares Expanded Tech-Software Sector ETF','issuer':'BlackRock','index':'S&P North American Expanded Technology Software','themes':[('주식','빅테크',['소프트웨어']),('주식','AI',['AI 소프트웨어'])]},
+    {'ticker':'SKYY','name':'First Trust Cloud Computing ETF','issuer':'First Trust','index':'ISE CTA Cloud Computing','themes':[('주식','빅테크',['클라우드']),('주식','AI',['클라우드','AI 인프라'])]},
+    {'ticker':'AIQ','name':'Global X Artificial Intelligence & Technology ETF','issuer':'Global X','index':'Indxx Artificial Intelligence & Big Data','themes':[('주식','AI',['생성형 AI','AI 소프트웨어','AI 플랫폼','AI 인프라'])]},
+    {'ticker':'IRBO','name':'iShares Robotics and Artificial Intelligence Multisector ETF','issuer':'BlackRock','index':'NYSE FactSet Global Robotics and AI','themes':[('주식','AI',['생성형 AI','AI 소프트웨어']),('주식','로봇',['산업용 로봇','서비스 로봇','자동화'])]},
+    {'ticker':'SMH','name':'VanEck Semiconductor ETF','issuer':'VanEck','index':'MVIS US Listed Semiconductor 25','themes':[('주식','반도체',['AI 반도체','파운드리','팹리스','반도체 장비'])]},
+    {'ticker':'SOXX','name':'iShares Semiconductor ETF','issuer':'BlackRock','index':'NYSE Semiconductor','themes':[('주식','반도체',['AI 반도체','파운드리','팹리스','반도체 장비'])]},
+    {'ticker':'SOXQ','name':'Invesco PHLX Semiconductor ETF','issuer':'Invesco','index':'PHLX Semiconductor Sector','themes':[('주식','반도체',['AI 반도체','파운드리','팹리스','반도체 장비'])]},
+    {'ticker':'XSD','name':'SPDR S&P Semiconductor ETF','issuer':'State Street','index':'S&P Semiconductor Select Industry','themes':[('주식','반도체',['AI 반도체','팹리스','반도체 장비'])]},
+
+    # 로봇 / 보안 / 양자 / 우주 / 방산
+    {'ticker':'BOTZ','name':'Global X Robotics & Artificial Intelligence ETF','issuer':'Global X','index':'Indxx Global Robotics & AI Thematic','themes':[('주식','로봇',['산업용 로봇','서비스 로봇','자동화','로봇 부품']),('주식','AI',['AI 인프라'])]},
+    {'ticker':'ROBO','name':'ROBO Global Robotics and Automation Index ETF','issuer':'ROBO Global','index':'ROBO Global Robotics and Automation','themes':[('주식','로봇',['산업용 로봇','서비스 로봇','자동화','로봇 부품'])]},
+    {'ticker':'CIBR','name':'First Trust NASDAQ Cybersecurity ETF','issuer':'First Trust','index':'Nasdaq CTA Cybersecurity','themes':[('주식','사이버보안',['사이버보안','클라우드 보안','네트워크 보안'])]},
+    {'ticker':'HACK','name':'Amplify Cybersecurity ETF','issuer':'Amplify','index':'ETFMG Prime Cyber Security','themes':[('주식','사이버보안',['사이버보안','클라우드 보안','네트워크 보안'])]},
+    {'ticker':'QTUM','name':'Defiance Quantum ETF','issuer':'Defiance','index':'BlueStar Machine Learning and Quantum Computing','themes':[('주식','양자컴퓨팅',['양자컴퓨팅','차세대 컴퓨팅'])]},
+    {'ticker':'ARKX','name':'ARK Space Exploration & Innovation ETF','issuer':'ARK Invest','index':'Active','themes':[('주식','우주·항공',['우주산업','위성','발사체','항공우주','드론'])]},
+    {'ticker':'UFO','name':'Procure Space ETF','issuer':'ProcureAM','index':'S-Network Space','themes':[('주식','우주·항공',['우주산업','위성','발사체','항공우주'])]},
+    {'ticker':'ITA','name':'iShares U.S. Aerospace & Defense ETF','issuer':'BlackRock','index':'Dow Jones U.S. Select Aerospace & Defense','themes':[('주식','방산',['미국 방산','항공우주 방산','미사일·전자전'])]},
+    {'ticker':'XAR','name':'SPDR S&P Aerospace & Defense ETF','issuer':'State Street','index':'S&P Aerospace & Defense Select Industry','themes':[('주식','방산',['미국 방산','항공우주 방산','미사일·전자전'])]},
+    {'ticker':'PPA','name':'Invesco Aerospace & Defense ETF','issuer':'Invesco','index':'SPADE Defense','themes':[('주식','방산',['미국 방산','항공우주 방산'])]},
+
+    # 에너지 / 전력 / EV
+    {'ticker':'URA','name':'Global X Uranium ETF','issuer':'Global X','index':'Solactive Global Uranium & Nuclear Components','themes':[('주식','원전·에너지',['원전','우라늄']),('원자재','산업금속',['우라늄'])]},
+    {'ticker':'URNM','name':'Sprott Uranium Miners ETF','issuer':'Sprott','index':'North Shore Global Uranium Mining','themes':[('주식','원전·에너지',['원전','우라늄']),('원자재','산업금속',['우라늄'])]},
+    {'ticker':'NLR','name':'VanEck Uranium and Nuclear ETF','issuer':'VanEck','index':'MVIS Global Uranium & Nuclear Energy','themes':[('주식','원전·에너지',['원전','우라늄'])]},
+    {'ticker':'TAN','name':'Invesco Solar ETF','issuer':'Invesco','index':'MAC Global Solar Energy','themes':[('주식','원전·에너지',['태양광','신재생에너지']),('주식','클린테크',['재생에너지','친환경'])]},
+    {'ticker':'FAN','name':'First Trust Global Wind Energy ETF','issuer':'First Trust','index':'ISE Clean Edge Global Wind Energy','themes':[('주식','원전·에너지',['풍력','신재생에너지']),('주식','클린테크',['재생에너지','친환경'])]},
+    {'ticker':'ICLN','name':'iShares Global Clean Energy ETF','issuer':'BlackRock','index':'S&P Global Clean Energy Transition','themes':[('주식','원전·에너지',['신재생에너지']),('주식','클린테크',['친환경','탄소중립','재생에너지'])]},
+    {'ticker':'XLE','name':'Energy Select Sector SPDR Fund','issuer':'State Street','index':'S&P Energy Select Sector','themes':[('주식','원전·에너지',['석유·가스','LNG'])]},
+    {'ticker':'GRID','name':'First Trust NASDAQ Clean Edge Smart Grid Infrastructure ETF','issuer':'First Trust','index':'Nasdaq OMX Clean Edge Smart Grid Infrastructure','themes':[('주식','전력·그리드',['전력망','스마트그리드','전력 인프라','데이터센터 전력'])]},
+    {'ticker':'PAVE','name':'Global X U.S. Infrastructure Development ETF','issuer':'Global X','index':'Indxx U.S. Infrastructure Development','themes':[('주식','산업재·인프라',['산업재','건설','인프라']),('주식','전력·그리드',['전력 인프라'])]},
+    {'ticker':'DRIV','name':'Global X Autonomous & Electric Vehicles ETF','issuer':'Global X','index':'Solactive Autonomous & Electric Vehicles','themes':[('주식','전기차·배터리',['전기차','자율주행','충전 인프라'])]},
+    {'ticker':'LIT','name':'Global X Lithium & Battery Tech ETF','issuer':'Global X','index':'Solactive Global Lithium','themes':[('주식','전기차·배터리',['배터리','리튬','배터리 소재']),('원자재','산업금속',['리튬'])]},
+    {'ticker':'BATT','name':'Amplify Lithium & Battery Technology ETF','issuer':'Amplify','index':'EQM Lithium & Battery Technology','themes':[('주식','전기차·배터리',['배터리','리튬','배터리 소재'])]},
+
+    # 헬스케어 / 금융 / 소비 / 게임 / 산업재
+    {'ticker':'XLV','name':'Health Care Select Sector SPDR Fund','issuer':'State Street','index':'S&P Health Care Select Sector','themes':[('주식','바이오·헬스케어',['헬스케어 혁신','제약','의료기기'])]},
+    {'ticker':'IBB','name':'iShares Biotechnology ETF','issuer':'BlackRock','index':'ICE Biotechnology','themes':[('주식','바이오·헬스케어',['바이오','유전체'])]},
+    {'ticker':'XBI','name':'SPDR S&P Biotech ETF','issuer':'State Street','index':'S&P Biotechnology Select Industry','themes':[('주식','바이오·헬스케어',['바이오','유전체'])]},
+    {'ticker':'IHI','name':'iShares U.S. Medical Devices ETF','issuer':'BlackRock','index':'Dow Jones U.S. Select Medical Equipment','themes':[('주식','바이오·헬스케어',['의료기기'])]},
+    {'ticker':'XLF','name':'Financial Select Sector SPDR Fund','issuer':'State Street','index':'S&P Financial Select Sector','themes':[('주식','금융·핀테크',['은행','보험','자산운용'])]},
+    {'ticker':'KBE','name':'SPDR S&P Bank ETF','issuer':'State Street','index':'S&P Banks Select Industry','themes':[('주식','금융·핀테크',['은행'])]},
+    {'ticker':'KRE','name':'SPDR S&P Regional Banking ETF','issuer':'State Street','index':'S&P Regional Banks Select Industry','themes':[('주식','금융·핀테크',['은행'])]},
+    {'ticker':'FINX','name':'Global X FinTech ETF','issuer':'Global X','index':'Indxx Global FinTech Thematic','themes':[('주식','금융·핀테크',['핀테크','디지털결제'])]},
+    {'ticker':'BLOK','name':'Amplify Transformational Data Sharing ETF','issuer':'Amplify','index':'Active','themes':[('주식','금융·핀테크',['블록체인'])]},
+    {'ticker':'XLP','name':'Consumer Staples Select Sector SPDR Fund','issuer':'State Street','index':'S&P Consumer Staples Select Sector','themes':[('주식','소비·브랜드',['필수소비재','음식료','글로벌 브랜드'])]},
+    {'ticker':'XLY','name':'Consumer Discretionary Select Sector SPDR Fund','issuer':'State Street','index':'S&P Consumer Discretionary Select Sector','themes':[('주식','소비·브랜드',['임의소비재','여행·레저','글로벌 브랜드'])]},
+    {'ticker':'ESPO','name':'VanEck Video Gaming and eSports ETF','issuer':'VanEck','index':'MVIS Global Video Gaming & eSports','themes':[('주식','게임·메타버스',['게임','e스포츠','디지털콘텐츠'])]},
+    {'ticker':'HERO','name':'Global X Video Games & Esports ETF','issuer':'Global X','index':'Solactive Video Games & Esports','themes':[('주식','게임·메타버스',['게임','e스포츠','디지털콘텐츠'])]},
+    {'ticker':'METV','name':'Roundhill Ball Metaverse ETF','issuer':'Roundhill','index':'Ball Metaverse','themes':[('주식','게임·메타버스',['메타버스','디지털콘텐츠'])]},
+    {'ticker':'XLI','name':'Industrial Select Sector SPDR Fund','issuer':'State Street','index':'S&P Industrial Select Sector','themes':[('주식','산업재·인프라',['산업재','기계','인프라'])]},
+
+    # 배당 / 스타일
+    {'ticker':'SCHD','name':'Schwab U.S. Dividend Equity ETF','issuer':'Schwab','index':'Dow Jones U.S. Dividend 100','themes':[('주식','배당·스타일',['고배당','배당성장','퀄리티'])]},
+    {'ticker':'VIG','name':'Vanguard Dividend Appreciation ETF','issuer':'Vanguard','index':'S&P U.S. Dividend Growers','themes':[('주식','배당·스타일',['배당성장','퀄리티'])]},
+    {'ticker':'DGRO','name':'iShares Core Dividend Growth ETF','issuer':'BlackRock','index':'Morningstar US Dividend Growth','themes':[('주식','배당·스타일',['배당성장','퀄리티'])]},
+    {'ticker':'VTV','name':'Vanguard Value ETF','issuer':'Vanguard','index':'CRSP US Large Cap Value','themes':[('주식','배당·스타일',['가치주'])]},
+    {'ticker':'VUG','name':'Vanguard Growth ETF','issuer':'Vanguard','index':'CRSP US Large Cap Growth','themes':[('주식','배당·스타일',['성장주'])]},
+    {'ticker':'QUAL','name':'iShares MSCI USA Quality Factor ETF','issuer':'BlackRock','index':'MSCI USA Sector Neutral Quality','themes':[('주식','배당·스타일',['퀄리티'])]},
+    {'ticker':'MTUM','name':'iShares MSCI USA Momentum Factor ETF','issuer':'BlackRock','index':'MSCI USA Momentum SR Variant','themes':[('주식','배당·스타일',['모멘텀'])]},
+    {'ticker':'USMV','name':'iShares MSCI USA Min Vol Factor ETF','issuer':'BlackRock','index':'MSCI USA Minimum Volatility','themes':[('주식','배당·스타일',['저변동성'])]},
+
+    # 미국채 / 회사채 / 글로벌채
+    {'ticker':'SGOV','name':'iShares 0-3 Month Treasury Bond ETF','issuer':'BlackRock','index':'ICE 0-3 Month US Treasury Securities','themes':[('채권','미국 국채',['초단기'])]},
+    {'ticker':'BIL','name':'SPDR Bloomberg 1-3 Month T-Bill ETF','issuer':'State Street','index':'Bloomberg 1-3 Month U.S. Treasury Bill','themes':[('채권','미국 국채',['초단기'])]},
+    {'ticker':'SHY','name':'iShares 1-3 Year Treasury Bond ETF','issuer':'BlackRock','index':'ICE U.S. Treasury 1-3 Year','themes':[('채권','미국 국채',['단기'])]},
+    {'ticker':'IEF','name':'iShares 7-10 Year Treasury Bond ETF','issuer':'BlackRock','index':'ICE U.S. Treasury 7-10 Year','themes':[('채권','미국 국채',['중기'])]},
+    {'ticker':'TLT','name':'iShares 20+ Year Treasury Bond ETF','issuer':'BlackRock','index':'ICE U.S. Treasury 20+ Year','themes':[('채권','미국 국채',['장기','초장기'])]},
+    {'ticker':'EDV','name':'Vanguard Extended Duration Treasury ETF','issuer':'Vanguard','index':'Bloomberg US Treasury STRIPS 20-30 Year Equal Par Bond','themes':[('채권','미국 국채',['초장기'])]},
+    {'ticker':'TIP','name':'iShares TIPS Bond ETF','issuer':'BlackRock','index':'ICE U.S. Treasury Inflation Linked','themes':[('채권','미국 국채',['물가연동채'])]},
+    {'ticker':'LQD','name':'iShares iBoxx $ Investment Grade Corporate Bond ETF','issuer':'BlackRock','index':'Markit iBoxx USD Liquid Investment Grade','themes':[('채권','회사채',['투자등급','우량회사채'])]},
+    {'ticker':'HYG','name':'iShares iBoxx $ High Yield Corporate Bond ETF','issuer':'BlackRock','index':'Markit iBoxx USD Liquid High Yield','themes':[('채권','회사채',['하이일드'])]},
+    {'ticker':'EMB','name':'iShares J.P. Morgan USD Emerging Markets Bond ETF','issuer':'BlackRock','index':'J.P. Morgan EMBI Global Core','themes':[('채권','글로벌 채권',['신흥국 채권'])]},
+    {'ticker':'BNDW','name':'Vanguard Total World Bond ETF','issuer':'Vanguard','index':'Bloomberg Global Aggregate Float Adjusted Composite','themes':[('채권','글로벌 채권',['글로벌 종합채권','선진국 채권'])]},
+
+    # 원자재 / 리츠 / 자산배분
+    {'ticker':'GLD','name':'SPDR Gold Shares','issuer':'State Street','index':'Gold Bullion','themes':[('원자재','귀금속',['금'])]},
+    {'ticker':'IAU','name':'iShares Gold Trust','issuer':'BlackRock','index':'Gold Bullion','themes':[('원자재','귀금속',['금'])]},
+    {'ticker':'SLV','name':'iShares Silver Trust','issuer':'BlackRock','index':'Silver Bullion','themes':[('원자재','귀금속',['은'])]},
+    {'ticker':'USO','name':'United States Oil Fund','issuer':'USCF','index':'WTI Crude Oil Futures','themes':[('원자재','에너지',['원유'])]},
+    {'ticker':'UNG','name':'United States Natural Gas Fund','issuer':'USCF','index':'Natural Gas Futures','themes':[('원자재','에너지',['천연가스'])]},
+    {'ticker':'CPER','name':'United States Copper Index Fund','issuer':'USCF','index':'SummerHaven Copper Index','themes':[('원자재','산업금속',['구리'])]},
+    {'ticker':'DBA','name':'Invesco DB Agriculture Fund','issuer':'Invesco','index':'DBIQ Diversified Agriculture','themes':[('원자재','농산물',['곡물','농산물'])]},
+    {'ticker':'VNQ','name':'Vanguard Real Estate ETF','issuer':'Vanguard','index':'MSCI US Investable Market Real Estate 25/50','themes':[('리츠','글로벌 리츠',['미국 리츠'])]},
+    {'ticker':'REET','name':'iShares Global REIT ETF','issuer':'BlackRock','index':'FTSE EPRA Nareit Global REITs','themes':[('리츠','글로벌 리츠',['글로벌 리츠','미국 리츠'])]},
+    {'ticker':'AOR','name':'iShares Core Growth Allocation ETF','issuer':'BlackRock','index':'S&P Target Risk Growth','themes':[('혼합자산','자산배분',['주식+채권','멀티에셋'])]},
+    {'ticker':'AOM','name':'iShares Core Moderate Allocation ETF','issuer':'BlackRock','index':'S&P Target Risk Moderate','themes':[('혼합자산','자산배분',['주식+채권','멀티에셋'])]},
+    {'ticker':'RPAR','name':'RPAR Risk Parity ETF','issuer':'RPAR','index':'Risk Parity','themes':[('혼합자산','자산배분',['리스크패리티','멀티에셋'])]},
+]
+
+
+def _normalize_etf_identifier(value):
+    s=str(value or '').strip()
+    if s.isdigit():
+        return s.zfill(6)
+    return s.upper()
+
+
+def _is_krx_etf_identifier(value):
+    s=str(value or '').strip()
+    return s.isdigit()
+
+
+def _us_catalog_rows():
+    rows=[]
+    for rank,item in enumerate(US_ETF_CATALOG,1):
+        for asset,sector,subs in item.get('themes',[]):
+            rows.append({
+                'etf_name':item['name'],
+                'etf_code':item['ticker'],
+                'issuer':item.get('issuer',''),
+                'aum':None,
+                'turnover':None,
+                'fee':None,
+                'index_name':item.get('index',''),
+                'as_of':'실시간 조회',
+                'theme_score':25.0,
+                'match_evidence':'미국상장 ETF 테마 분류',
+                'listing_market':'미국',
+                '_asset':asset,
+                '_sector':sector,
+                '_subs':subs,
+                '_rank':rank,
+            })
+    return pd.DataFrame(rows)
+
+
+def search_us_etf_catalog(region,asset,sector,subsector):
+    if region!='해외자산':
+        return pd.DataFrame()
+    df=_us_catalog_rows()
+    if df.empty:
+        return pd.DataFrame()
+    q=df[(df['_asset']==asset)&(df['_sector']==sector)].copy()
+    if subsector!='전체':
+        q=q[q['_subs'].apply(lambda xs: subsector in (xs or []))]
+    if q.empty:
+        return pd.DataFrame()
+    q=q.sort_values(['_rank','etf_code']).drop_duplicates('etf_code',keep='first')
+    return q[[
+        'etf_name','etf_code','issuer','aum','turnover','fee','index_name','as_of',
+        'theme_score','match_evidence','listing_market'
+    ]].reset_index(drop=True)
+
+
+def get_us_etf_catalog_item(ticker):
+    t=str(ticker or '').strip().upper()
+    for item in US_ETF_CATALOG:
+        if item.get('ticker','').upper()==t:
+            return dict(item)
+    return {}
+
+
+@st.cache_data(ttl=3600,show_spinner=False)
+def search_us_etf_yahoo(query_text):
+    """Yahoo/yfinance 검색으로 카탈로그 밖 미국상장 ETF도 빠른검색에 보완."""
+    key=str(query_text or '').strip()
+    if not key:
+        return pd.DataFrame()
+    try:
+        yf=_import_yfinance()
+        quotes=yf.Search(
+            key,max_results=20,news_count=0,lists_count=0,
+            include_cb=False,include_nav_links=False,include_research=False,
+            enable_fuzzy_query=True,raise_errors=False
+        ).quotes
+    except Exception:
+        return pd.DataFrame()
+
+    rows=[]
+    us_exchange_codes={'NMS','NGM','NCM','NYQ','PCX','ASE','BTS','NAS','NYSE','NASDAQ','ARCA'}
+    for q in quotes or []:
+        if str(q.get('quoteType','')).upper()!='ETF':
+            continue
+        symbol=str(q.get('symbol','')).strip().upper()
+        exch=str(q.get('exchange','')).strip().upper()
+        exch_disp=str(q.get('exchDisp','')).strip()
+        if not symbol:
+            continue
+        is_us=(exch in us_exchange_codes) or any(x in exch_disp.lower() for x in ['nasdaq','nyse','arca','cboe'])
+        if not is_us:
+            continue
+        name=str(q.get('longname') or q.get('shortname') or symbol).strip()
+        rows.append({
+            'etf_name':name,'etf_code':symbol,'issuer':'','aum':None,'turnover':None,
+            'fee':None,'index_name':'','as_of':'Yahoo 검색','listing_market':'미국'
+        })
+    if not rows:
+        return pd.DataFrame()
+    return pd.DataFrame(rows).drop_duplicates('etf_code',keep='first').reset_index(drop=True)
+
+
+def search_etf_direct(query_text):
+    """ETF 자체를 코드/티커/이름으로 빠르게 검색: KRX 로컬 DB + 미국상장 대표 ETF."""
+    key=str(query_text or '').strip()
+    if not key:
+        return pd.DataFrame()
+    key_n=key.lower().replace(' ','')
+    parts=[]
+
+    # KRX 로컬 ETF
+    if db_available():
+        try:
+            m=load_master_db(db_token()).copy()
+            if not m.empty:
+                code_s=m['etf_code'].fillna('').astype(str)
+                name_s=m['etf_name'].fillna('').astype(str)
+                mask=(
+                    code_s.str.lower().str.replace(' ','',regex=False).str.contains(key_n,regex=False)
+                    | name_s.str.lower().str.replace(' ','',regex=False).str.contains(key_n,regex=False)
+                )
+                k=m.loc[mask,[c for c in ['etf_name','etf_code','issuer','aum','turnover','fee','index_name','as_of'] if c in m.columns]].copy()
+                if not k.empty:
+                    k['listing_market']='KRX'
+                    parts.append(k.head(50))
+        except Exception:
+            pass
+
+    # 미국상장 ETF 카탈로그
+    us=[]
+    for rank,item in enumerate(US_ETF_CATALOG,1):
+        hay=f"{item.get('ticker','')} {item.get('name','')} {item.get('issuer','')} {item.get('index','')}".lower().replace(' ','')
+        if key_n in hay:
+            us.append({
+                'etf_name':item['name'],'etf_code':item['ticker'],'issuer':item.get('issuer',''),
+                'aum':None,'turnover':None,'fee':None,'index_name':item.get('index',''),
+                'as_of':'실시간 조회','listing_market':'미국','_rank':rank
+            })
+    if us:
+        u=pd.DataFrame(us).sort_values('_rank').drop(columns=['_rank'])
+        parts.append(u)
+
+    # 카탈로그에 없는 미국 ETF도 yfinance Search로 보완
+    try:
+        live_us=search_us_etf_yahoo(key)
+        if isinstance(live_us,pd.DataFrame) and not live_us.empty:
+            parts.append(live_us)
+    except Exception:
+        pass
+
+    if not parts:
+        return pd.DataFrame()
+    out=pd.concat(parts,ignore_index=True,sort=False)
+    out=out.drop_duplicates(subset=['listing_market','etf_code'],keep='first')
+    # 티커/코드 정확일치를 맨 위로
+    code_norm=out['etf_code'].fillna('').astype(str).str.lower()
+    out['_exact']=(code_norm==key.lower()).astype(int)
+    out=out.sort_values(['_exact','listing_market','etf_name'],ascending=[False,True,True]).drop(columns=['_exact'])
+    return out.reset_index(drop=True)
+
+
+def _import_yfinance():
+    try:
+        import yfinance as yf
+        return yf
+    except ModuleNotFoundError as e:
+        raise RuntimeError(
+            '미국상장 ETF 조회에는 yfinance가 필요합니다. '
+            'requirements.txt에 yfinance>=0.2.50 을 추가한 뒤 Streamlit Cloud를 재부팅해 주세요.'
+        ) from e
+
+
+@st.cache_data(ttl=1800,show_spinner=False)
+def get_us_etf_price_history(ticker,period_label):
+    yf=_import_yfinance()
+    period_map={'1개월':'1mo','3개월':'3mo','6개월':'6mo','1년':'1y'}
+    t=yf.Ticker(str(ticker).upper())
+    df=t.history(period=period_map.get(period_label,'6mo'),auto_adjust=False)
+    if df is None or df.empty or 'Close' not in df.columns:
+        return pd.DataFrame()
+    out=df.reset_index().copy()
+    date_col='Date' if 'Date' in out.columns else out.columns[0]
+    out[date_col]=pd.to_datetime(out[date_col],errors='coerce')
+    out['Close']=pd.to_numeric(out['Close'],errors='coerce')
+    out=out.dropna(subset=[date_col,'Close'])
+    return out.rename(columns={date_col:'날짜','Close':'종가'})[['날짜','종가']]
+
+
+@st.cache_data(ttl=21600,show_spinner=False)
+def get_us_etf_holdings(ticker):
+    yf=_import_yfinance()
+    t=yf.Ticker(str(ticker).upper())
+    try:
+        funds=t.funds_data
+        top=funds.top_holdings if funds is not None else None
+    except Exception as e:
+        return {'rows':[],'error':str(e)}
+
+    if top is None or getattr(top,'empty',True):
+        return {'rows':[],'error':'상위 구성종목 데이터가 비어 있습니다.'}
+
+    df=top.copy().reset_index()
+    # yfinance 표준 형태: index=Symbol, columns=['Name','Holding Percent']
+    symbol_col=None
+    for c in ['Symbol','symbol','index']:
+        if c in df.columns:
+            symbol_col=c; break
+    if symbol_col is None:
+        symbol_col=df.columns[0]
+    name_col='Name' if 'Name' in df.columns else None
+    weight_col='Holding Percent' if 'Holding Percent' in df.columns else None
+    if weight_col is None:
+        for c in df.columns:
+            if 'holding' in str(c).lower() and 'percent' in str(c).lower():
+                weight_col=c; break
+    if name_col is None:
+        name_col=symbol_col
+    if weight_col is None:
+        return {'rows':[],'error':f'구성비중 컬럼을 찾지 못했습니다: {list(df.columns)}'}
+
+    out=pd.DataFrame({
+        '종목코드':df[symbol_col].astype(str),
+        '구성종목':df[name_col].astype(str),
+        '비중(%)':pd.to_numeric(df[weight_col],errors='coerce')
+    }).dropna(subset=['비중(%)'])
+    if not out.empty and float(out['비중(%)'].max())<=1.0:
+        out['비중(%)']=out['비중(%)']*100.0
+    out=out.sort_values('비중(%)',ascending=False).reset_index(drop=True)
+    return {'rows':out.to_dict('records'),'error':''}
+
+
+def render_us_etf_detail(ticker,key_prefix='us_detail'):
+    code=str(ticker or '').strip().upper()
+    meta=get_us_etf_catalog_item(code)
+    etf_name=meta.get('name') or st.session_state.get('selected_etf_name') or code
+
+    st.markdown('---')
+    st.subheader(f'🇺🇸 {etf_name} · {code}')
+    st.caption('미국 상장 ETF · 가격과 상위 구성종목은 Yahoo Finance/yfinance 공개 데이터를 선택 시 조회합니다.')
+
+    info_cols=st.columns(4)
+    info_cols[0].metric('티커',code)
+    info_cols[1].metric('상장시장','미국')
+    info_cols[2].metric('운용사',str(meta.get('issuer') or '-')[:22])
+    info_cols[3].metric('추종지수',str(meta.get('index') or '-')[:28])
+
+    chart_col,holding_col=st.columns([1.35,1],gap='large')
+    with chart_col:
+        st.markdown('#### 가격 차트')
+        period=st.radio(
+            '조회기간',['1개월','3개월','6개월','1년'],index=2,horizontal=True,
+            key=f'{key_prefix}_period_{code}'
+        )
+        try:
+            with st.spinner(f'{code} 가격 데이터를 불러오는 중...'):
+                p=get_us_etf_price_history(code,period)
+            if p.empty:
+                st.info('해당 기간의 가격 데이터를 불러오지 못했습니다.')
+            else:
+                p=p.dropna().sort_values('날짜')
+                last=float(p['종가'].iloc[-1])
+                prev=float(p['종가'].iloc[-2]) if len(p)>=2 else last
+                change=((last/prev)-1)*100 if prev else 0.0
+                m1,m2=st.columns(2)
+                m1.metric('최근 종가',f'${last:,.2f}',f'{change:+.2f}%')
+                m2.metric('조회 데이터',f'{len(p):,}일')
+                st.altair_chart(
+                    alt.Chart(p).mark_line(color='#008878').encode(
+                        x=alt.X('날짜:T',title='날짜'),
+                        y=alt.Y('종가:Q',title='종가 (USD)',scale=alt.Scale(zero=False)),
+                        tooltip=[alt.Tooltip('날짜:T'),alt.Tooltip('종가:Q',format=',.2f')]
+                    ).properties(height=390,background='white').configure_axis(
+                        labelColor='#536F64',titleColor='#203D35',gridColor='#E1EBE6'
+                    ).configure_view(stroke='#CFDFD9').interactive(),
+                    use_container_width=True,theme=None
+                )
+                st.caption(f"{p['날짜'].min():%Y-%m-%d} ~ {p['날짜'].max():%Y-%m-%d} · USD")
+        except Exception as e:
+            st.warning(f'미국 ETF 가격 조회 실패: {e}')
+
+    with holding_col:
+        st.markdown('#### 주요 구성종목')
+        try:
+            with st.spinner(f'{code} 상위 구성종목을 불러오는 중...'):
+                h=get_us_etf_holdings(code)
+            rows=h.get('rows') or []
+            if not rows:
+                st.info('상위 구성종목을 불러오지 못했습니다.')
+                if h.get('error'):
+                    st.caption(f"조회 오류: {h.get('error')}")
+            else:
+                hd=pd.DataFrame(rows)
+                top=hd.head(10).copy()
+                st.altair_chart(
+                    alt.Chart(top).mark_bar(color='#008878').encode(
+                        x=alt.X('구성종목:N',sort='-y',title='구성종목'),
+                        y=alt.Y('비중(%):Q',title='편입비중 (%)'),
+                        tooltip=['종목코드','구성종목',alt.Tooltip('비중(%):Q',format='.2f')]
+                    ).properties(height=300,background='white').configure_axis(
+                        labelColor='#536F64',titleColor='#203D35',gridColor='#E1EBE6'
+                    ).configure_view(stroke='#CFDFD9'),
+                    use_container_width=True,theme=None
+                )
+                st.dataframe(
+                    hd,use_container_width=True,hide_index=True,height=420,
+                    column_config={'비중(%)':st.column_config.NumberColumn(format='%.2f%%')}
+                )
+                st.caption('Yahoo Finance/yfinance 상위 구성종목 · 데이터 제공 범위 내 표시')
+        except Exception as e:
+            st.warning(f'미국 ETF 구성종목 조회 실패: {e}')
+
+
 # =========================================================
 # AUTO THEME MAPPING
 # ETF명 + 추종지수 + 구성종목명/비중을 이용한 로컬 규칙 기반 자동 매핑
@@ -1408,7 +1846,7 @@ def get_etf_price_history(etf_code,period_label):
 
 
 def _set_selected_etf(etf_code,etf_name='',source=''):
-    st.session_state['selected_etf_code']=str(etf_code).zfill(6)
+    st.session_state['selected_etf_code']=_normalize_etf_identifier(etf_code)
     st.session_state['selected_etf_name']=str(etf_name or '')
     st.session_state['selected_etf_source']=str(source or '')
 
@@ -1695,6 +2133,9 @@ def _prepare_holdings_for_detail(code,etf_name,local_holdings):
     return local_holdings.copy(),'KRX PDF · 해외종목 비중 미제공','',True
 
 def render_etf_detail(etf_code,key_prefix='detail'):
+    if not _is_krx_etf_identifier(etf_code):
+        return render_us_etf_detail(etf_code,key_prefix=key_prefix)
+
     code=str(etf_code).zfill(6)
     master_row=get_etf_master_local(code,db_token())
     local_holdings=get_etf_holdings_local(code,db_token())
@@ -1967,6 +2408,11 @@ with st.expander('🧪 배포환경 진단', expanded=False):
         st.success(f"pykrx 설치됨 · {getattr(_pk,'__version__',getattr(_pk,'version','버전 미확인'))}")
     except Exception as _e:
         st.error(f"pykrx 미설치/로드 실패 · {_e}")
+    try:
+        import yfinance as _yf
+        st.success(f"yfinance 설치됨 · {getattr(_yf,'__version__','버전 미확인')} · 미국상장 ETF 조회 가능")
+    except Exception as _e:
+        st.warning(f"yfinance 미설치 · 미국상장 ETF 상세조회 제한 · {_e}")
 
 
 _s1,_s2,_s3,_s4=st.columns(4)
@@ -1979,7 +2425,7 @@ if _migrated:
     st.success('기존 CSV 데이터를 로컬 SQLite DB로 자동 변환했습니다. KRX 재조회는 하지 않았습니다.')
 
 if db_available():
-    st.success('검색 모드: 로컬 DB 사용 중 · 일반 검색 시 KRX에 접속하지 않습니다.')
+    st.success('검색 모드: KRX 로컬 DB + 미국상장 ETF 카탈로그 · 일반 검색 시 KRX 전체 재수집 없음')
 
     if _theme_error:
         st.warning(f'자동 테마 매핑 오류: {_theme_error}')
@@ -2046,8 +2492,63 @@ with st.expander('🔄 KRX에서 로컬 DB 새로고침',expanded=not db_availab
 st.divider()
 
 
+
 # =========================================================
-# TREE SEARCH - LOCAL DB ONLY
+# ETF DIRECT SEARCH - KRX + US LISTED
+# =========================================================
+
+st.subheader('🔎 ETF명 · 코드/티커 빠른검색')
+_d1,_d2=st.columns([4,1])
+with _d1:
+    direct_query=st.text_input(
+        'ETF명 / 코드 / 미국 티커',
+        placeholder='예: QQQ, SPY, SOXX, KODEX 200, 069500',
+        key='direct_etf_query'
+    )
+with _d2:
+    st.write('')
+    st.write('')
+    direct_clicked=st.button('빠른검색',type='primary',use_container_width=True,key='direct_etf_search_btn')
+
+if direct_clicked:
+    st.session_state['direct_etf_result']=search_etf_direct(direct_query)
+
+_direct_result=st.session_state.get('direct_etf_result')
+if isinstance(_direct_result,pd.DataFrame) and direct_query.strip():
+    if _direct_result.empty:
+        st.info('일치하는 ETF를 찾지 못했습니다.')
+    else:
+        _direct_show=_direct_result.rename(columns={
+            'etf_name':'ETF명','etf_code':'ETF코드/티커','listing_market':'상장시장',
+            'issuer':'운용사','aum':'순자산','turnover':'거래대금','fee':'총보수',
+            'index_name':'추종지수','as_of':'기준'
+        })
+        st.caption('국내상장 ETF는 로컬 KRX DB, 미국상장 ETF는 대표 카탈로그 + Yahoo 검색으로 조회합니다.')
+        _direct_event=st.dataframe(
+            _direct_show,use_container_width=True,hide_index=True,on_select='rerun',
+            selection_mode='single-row',key='direct_etf_results_table'
+        )
+        try:
+            _direct_rows=list(_direct_event.selection.rows)
+        except Exception:
+            _direct_rows=[]
+        if _direct_rows:
+            _idx=int(_direct_rows[0])
+            if 0<=_idx<len(_direct_show):
+                _row=_direct_show.iloc[_idx]
+                _set_selected_etf(
+                    _row.get('ETF코드/티커',''),_row.get('ETF명',''),'direct'
+                )
+        if (
+            st.session_state.get('selected_etf_code')
+            and st.session_state.get('selected_etf_source')=='direct'
+        ):
+            render_etf_detail(st.session_state['selected_etf_code'],key_prefix='direct_detail')
+
+st.divider()
+
+# =========================================================
+# TREE SEARCH - KRX LOCAL DB + US LISTED CATALOG
 # =========================================================
 
 left,right=st.columns([0.82,1.45],gap='large')
@@ -2098,18 +2599,12 @@ with left:
     if saved_tree and saved_tree!=current_tree:
         st.caption('선택 조건이 변경되었습니다. 새 조건으로 보려면 검색 버튼을 다시 눌러주세요.')
     else:
-        st.caption('검색은 저장된 로컬 DB만 사용하며 KRX에 다시 접속하지 않습니다.')
+        st.caption('KRX ETF는 저장된 로컬 DB를 사용하고, 해외자산에서는 미국상장 대표 ETF도 함께 검색합니다.')
 
 with right:
     st.subheader('🔎 조건에 맞는 ETF')
 
-    if master.empty:
-        st.info('로컬 ETF DB가 비어 있습니다. 최초 1회 DB 업데이트가 필요합니다.')
-
-    elif _theme_error:
-        st.warning(f'테마 매핑을 사용할 수 없습니다: {_theme_error}')
-
-    elif not st.session_state.get('tree_search_requested'):
+    if not st.session_state.get('tree_search_requested'):
         st.info('왼쪽에서 조건을 선택한 뒤 **선택 조건으로 ETF 검색** 버튼을 눌러주세요.')
 
     else:
@@ -2123,20 +2618,45 @@ with right:
                 f'검색조건: {s_region} → {s_asset} → {s_sector} → {s_subsector}'
             )
 
-            with st.spinner('로컬 테마 DB 검색 중...'):
-                q=search_theme_db(
+            # 국내상장(KRX) 결과와 미국상장 대표 ETF를 합쳐서 표시한다.
+            # KRX DB가 비어 있거나 테마 매핑에 문제가 있어도 해외자산은 미국 ETF 검색 가능.
+            with st.spinner('ETF 테마 검색 중...'):
+                q_krx=pd.DataFrame()
+                if db_available() and not _theme_error:
+                    q_krx=search_theme_db(
+                        s_region,s_asset,s_sector,s_subsector
+                    )
+                    if not q_krx.empty:
+                        q_krx=q_krx.copy()
+                        q_krx['listing_market']='KRX'
+
+                q_us=search_us_etf_catalog(
                     s_region,s_asset,s_sector,s_subsector
                 )
 
+                _parts=[x for x in [q_krx,q_us] if isinstance(x,pd.DataFrame) and not x.empty]
+                q=pd.concat(_parts,ignore_index=True,sort=False) if _parts else pd.DataFrame()
+                if not q.empty:
+                    q=q.sort_values(
+                        ['theme_score','listing_market','etf_name'],
+                        ascending=[False,True,True]
+                    ).reset_index(drop=True)
+
             if q.empty:
-                st.info(
-                    '현재 자동 매핑 기준으로 해당 조건에 맞는 ETF를 찾지 못했습니다. '
-                    'ETF명·추종지수·구성종목 정보가 부족한 상품은 누락될 수 있습니다.'
-                )
+                if s_region=='국내자산' and not db_available():
+                    st.info('국내상장 ETF 로컬 DB가 비어 있습니다. 최초 1회 KRX DB 업데이트가 필요합니다.')
+                elif s_region=='국내자산' and _theme_error:
+                    st.warning(f'국내 ETF 테마 매핑을 사용할 수 없습니다: {_theme_error}')
+                else:
+                    st.info(
+                        '현재 분류 기준으로 해당 조건에 맞는 ETF를 찾지 못했습니다. '
+                        '미국상장 ETF 카탈로그는 대표 상품 중심이며 계속 확대할 수 있습니다.'
+                    )
             else:
                 show=q.rename(columns={
                     'etf_name':'ETF명',
-                    'etf_code':'ETF코드',
+                    'etf_code':'ETF코드/티커',
+                    'listing_market':'상장시장',
                     'issuer':'운용사',
                     'aum':'순자산',
                     'turnover':'거래대금',
@@ -2149,7 +2669,8 @@ with right:
 
                 st.success(
                     f'{len(show):,}개 ETF를 찾았습니다. '
-                    'ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.'
+                    + ('KRX 국내상장 + 미국상장 ETF 통합 결과입니다.' if s_region=='해외자산'
+                       else 'ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.')
                 )
 
                 st.caption('👇 ETF 행을 클릭하면 아래에 가격차트와 구성종목이 표시됩니다.')
@@ -2176,14 +2697,14 @@ with right:
                     if 0<=_idx<len(show):
                         _row=show.iloc[_idx]
                         _set_selected_etf(
-                            _row.get('ETF코드',''),
+                            _row.get('ETF코드/티커',''),
                             _row.get('ETF명',''),
                             'theme'
                         )
 
                 st.caption(
-                    '매핑점수는 ETF명 신호를 가장 크게, 추종지수와 구성종목/편입비중을 '
-                    '보조적으로 반영한 규칙 기반 분류 점수입니다. 투자성과 점수가 아닙니다.'
+                    'KRX ETF는 ETF명·추종지수·구성종목을 이용한 규칙 기반 매핑, '
+                    '미국상장 ETF는 대표 상품의 검증된 테마 분류를 사용합니다. 투자성과 점수가 아닙니다.'
                 )
 
                 if (
@@ -2206,7 +2727,7 @@ a,b=st.columns([1,1.25],gap='large')
 
 with a:
     st.subheader('🔍 종목으로 ETF 찾기')
-    st.caption('로컬 DB에서만 검색하므로 전체 ETF를 다시 조회하지 않습니다.')
+    st.caption('편입종목 역검색은 현재 국내상장(KRX) ETF 로컬 DB를 대상으로 합니다.')
 
     names=st.text_input(
         '종목명 / 종목코드',
