@@ -9,7 +9,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 from html.parser import HTMLParser
 
-st.set_page_config(page_title='ETF Finder', page_icon='🧭', layout='wide')
+st.set_page_config(page_title='HanaV ETF finder', page_icon='🧭', layout='wide')
 
 st.markdown('''
 <style>
@@ -79,7 +79,7 @@ if not _etf_app_password():
 if not st.session_state['_etf_authenticated']:
     st.markdown('''
     <div style="max-width:430px;margin:11vh auto 22px;text-align:center;">
-      <div style="font-size:34px;font-weight:950;color:#008878;">ETF Finder</div>
+      <div style="font-size:34px;font-weight:950;color:#008878;">HanaV ETF finder</div>
       <div style="margin-top:7px;color:#536F64;font-size:13px;font-weight:650;">Private Investment Dashboard</div>
       <div style="margin-top:4px;color:#60766E;font-size:11px;">Designed &amp; Built by K.H. Ahn</div>
     </div>''', unsafe_allow_html=True)
@@ -100,7 +100,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
