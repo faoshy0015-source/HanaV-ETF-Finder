@@ -2498,32 +2498,47 @@ st.divider()
 # =========================================================
 
 st.subheader('🔎 ETF명 · 코드/티커 빠른검색')
-_d1,_d2=st.columns([4,1])
-with _d1:
-    direct_query=st.text_input(
-        'ETF명 / 코드 / 미국 티커',
-        placeholder='예: QQQ, SPY, SOXX, KODEX 200, 069500',
-        key='direct_etf_query'
-    )
-with _d2:
-    st.write('')
-    st.write('')
-    direct_clicked=st.button('빠른검색',type='primary',use_container_width=True,key='direct_etf_search_btn')
+st.caption(
+    f'미국상장 ETF 내장 카탈로그 {len(US_ETF_CATALOG):,}종 · QQQ/QQQM/SPY/SOXX/SMH 등은 '
+    '인터넷 검색 성공 여부와 관계없이 바로 조회됩니다.'
+)
+
+with st.form('direct_etf_search_form',clear_on_submit=False):
+    _d1,_d2=st.columns([4,1])
+    with _d1:
+        direct_query=st.text_input(
+            'ETF명 / 코드 / 미국 티커',
+            placeholder='예: QQQ, QQQM, SPY, SOXX, KODEX 200, 069500',
+            key='direct_etf_query_input'
+        )
+    with _d2:
+        st.write('')
+        st.write('')
+        direct_clicked=st.form_submit_button(
+            '빠른검색',type='primary',use_container_width=True
+        )
 
 if direct_clicked:
-    st.session_state['direct_etf_result']=search_etf_direct(direct_query)
+    _q=str(direct_query or '').strip()
+    st.session_state['direct_etf_query_last']=_q
+    st.session_state['direct_etf_result']=search_etf_direct(_q)
 
 _direct_result=st.session_state.get('direct_etf_result')
-if isinstance(_direct_result,pd.DataFrame) and direct_query.strip():
+_direct_last=st.session_state.get('direct_etf_query_last','')
+if isinstance(_direct_result,pd.DataFrame) and _direct_last:
     if _direct_result.empty:
-        st.info('일치하는 ETF를 찾지 못했습니다.')
+        st.info(f'"{_direct_last}"와 일치하는 ETF를 찾지 못했습니다.')
     else:
         _direct_show=_direct_result.rename(columns={
             'etf_name':'ETF명','etf_code':'ETF코드/티커','listing_market':'상장시장',
             'issuer':'운용사','aum':'순자산','turnover':'거래대금','fee':'총보수',
             'index_name':'추종지수','as_of':'기준'
         })
-        st.caption('국내상장 ETF는 로컬 KRX DB, 미국상장 ETF는 대표 카탈로그 + Yahoo 검색으로 조회합니다.')
+        st.success(f'"{_direct_last}" 검색 결과 · {len(_direct_show):,}개')
+        st.caption(
+            '국내상장 ETF는 로컬 KRX DB, 미국상장 ETF는 내장 카탈로그를 우선 사용하고 '
+            '카탈로그에 없는 티커만 Yahoo/yfinance 검색으로 보완합니다.'
+        )
         _direct_event=st.dataframe(
             _direct_show,use_container_width=True,hide_index=True,on_select='rerun',
             selection_mode='single-row',key='direct_etf_results_table'
@@ -2561,6 +2576,16 @@ with left:
         horizontal=True,
         key='tree_region'
     )
+    if region=='해외자산':
+        market_scope=st.radio(
+            'STEP 1-1 · ETF 상장시장',
+            ['전체','국내상장','미국상장'],
+            horizontal=True,
+            key='tree_listing_market'
+        )
+    else:
+        market_scope='국내상장'
+
     asset=st.selectbox(
         'STEP 2 · 자산군',
         list(TREE[region].keys()),
@@ -2589,7 +2614,7 @@ with left:
         key='tree_search_button'
     )
 
-    current_tree=(region,asset,sector,subsector)
+    current_tree=(region,asset,sector,subsector,market_scope)
 
     if tree_search_clicked:
         st.session_state['tree_search_params']=current_tree
@@ -2612,17 +2637,22 @@ with right:
         if not params:
             st.info('검색 조건을 선택해 주세요.')
         else:
-            s_region,s_asset,s_sector,s_subsector=params
+            # 기존 세션(4개 값)이 남아 있어도 안전하게 처리
+            if len(params)>=5:
+                s_region,s_asset,s_sector,s_subsector,s_market_scope=params[:5]
+            else:
+                s_region,s_asset,s_sector,s_subsector=params[:4]
+                s_market_scope='전체' if s_region=='해외자산' else '국내상장'
 
+            _market_text=(f' → {s_market_scope}' if s_region=='해외자산' else '')
             st.caption(
-                f'검색조건: {s_region} → {s_asset} → {s_sector} → {s_subsector}'
+                f'검색조건: {s_region}{_market_text} → {s_asset} → {s_sector} → {s_subsector}'
             )
 
-            # 국내상장(KRX) 결과와 미국상장 대표 ETF를 합쳐서 표시한다.
-            # KRX DB가 비어 있거나 테마 매핑에 문제가 있어도 해외자산은 미국 ETF 검색 가능.
+            # 국내상장(KRX)과 미국 직접상장 ETF를 상장시장 필터에 맞게 병합한다.
             with st.spinner('ETF 테마 검색 중...'):
                 q_krx=pd.DataFrame()
-                if db_available() and not _theme_error:
+                if s_market_scope!='미국상장' and db_available() and not _theme_error:
                     q_krx=search_theme_db(
                         s_region,s_asset,s_sector,s_subsector
                     )
@@ -2630,9 +2660,11 @@ with right:
                         q_krx=q_krx.copy()
                         q_krx['listing_market']='KRX'
 
-                q_us=search_us_etf_catalog(
-                    s_region,s_asset,s_sector,s_subsector
-                )
+                q_us=pd.DataFrame()
+                if s_region=='해외자산' and s_market_scope!='국내상장':
+                    q_us=search_us_etf_catalog(
+                        s_region,s_asset,s_sector,s_subsector
+                    )
 
                 _parts=[x for x in [q_krx,q_us] if isinstance(x,pd.DataFrame) and not x.empty]
                 q=pd.concat(_parts,ignore_index=True,sort=False) if _parts else pd.DataFrame()
@@ -2667,11 +2699,16 @@ with right:
                     'match_evidence':'매핑 근거'
                 })
 
-                st.success(
-                    f'{len(show):,}개 ETF를 찾았습니다. '
-                    + ('KRX 국내상장 + 미국상장 ETF 통합 결과입니다.' if s_region=='해외자산'
-                       else 'ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.')
-                )
+                if s_region=='해외자산':
+                    if s_market_scope=='미국상장':
+                        _scope_msg='미국 직접상장 ETF 결과입니다.'
+                    elif s_market_scope=='국내상장':
+                        _scope_msg='국내(KRX) 상장 해외자산 ETF 결과입니다.'
+                    else:
+                        _scope_msg='국내(KRX) 상장 + 미국 직접상장 ETF 통합 결과입니다.'
+                else:
+                    _scope_msg='ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.'
+                st.success(f'{len(show):,}개 ETF를 찾았습니다. {_scope_msg}')
 
                 st.caption('👇 ETF 행을 클릭하면 아래에 가격차트와 구성종목이 표시됩니다.')
 
