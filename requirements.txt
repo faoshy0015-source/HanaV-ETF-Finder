@@ -2,5 +2,5 @@ streamlit>=1.40
 pandas>=2.1
 altair>=5.0
 requests>=2.31
-pykrx>=1.0.48
+pykrx==1.2.9
 yfinance>=0.2.50
