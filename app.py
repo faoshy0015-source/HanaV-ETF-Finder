@@ -100,7 +100,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 · US ETF 통합 v3</p></div>''', unsafe_allow_html=True)
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
@@ -2576,15 +2576,8 @@ with left:
         horizontal=True,
         key='tree_region'
     )
-    if region=='해외자산':
-        market_scope=st.radio(
-            'STEP 1-1 · ETF 상장시장',
-            ['전체','국내상장','미국상장'],
-            horizontal=True,
-            key='tree_listing_market'
-        )
-    else:
-        market_scope='국내상장'
+    # 해외자산은 국내(KRX) 상장 해외ETF + 미국 직접상장 ETF를 자동 통합 검색합니다.
+    market_scope='전체' if region=='해외자산' else '국내상장'
 
     asset=st.selectbox(
         'STEP 2 · 자산군',
@@ -2614,7 +2607,7 @@ with left:
         key='tree_search_button'
     )
 
-    current_tree=(region,asset,sector,subsector,market_scope)
+    current_tree=(region,asset,sector,subsector)
 
     if tree_search_clicked:
         st.session_state['tree_search_params']=current_tree
@@ -2624,7 +2617,7 @@ with left:
     if saved_tree and saved_tree!=current_tree:
         st.caption('선택 조건이 변경되었습니다. 새 조건으로 보려면 검색 버튼을 다시 눌러주세요.')
     else:
-        st.caption('KRX ETF는 저장된 로컬 DB를 사용하고, 해외자산에서는 미국상장 대표 ETF도 함께 검색합니다.')
+        st.caption('해외자산은 국내상장 해외ETF와 미국 직접상장 ETF를 자동으로 함께 검색합니다. QQQ·QQQM·SPY·SOXX 등 포함.')
 
 with right:
     st.subheader('🔎 조건에 맞는 ETF')
@@ -2637,16 +2630,12 @@ with right:
         if not params:
             st.info('검색 조건을 선택해 주세요.')
         else:
-            # 기존 세션(4개 값)이 남아 있어도 안전하게 처리
-            if len(params)>=5:
-                s_region,s_asset,s_sector,s_subsector,s_market_scope=params[:5]
-            else:
-                s_region,s_asset,s_sector,s_subsector=params[:4]
-                s_market_scope='전체' if s_region=='해외자산' else '국내상장'
+            # v3: 해외자산이면 상장시장 선택 없이 국내상장 + 미국직접상장을 자동 통합
+            s_region,s_asset,s_sector,s_subsector=params[:4]
+            s_market_scope='전체' if s_region=='해외자산' else '국내상장'
 
-            _market_text=(f' → {s_market_scope}' if s_region=='해외자산' else '')
             st.caption(
-                f'검색조건: {s_region}{_market_text} → {s_asset} → {s_sector} → {s_subsector}'
+                f'검색조건: {s_region} → {s_asset} → {s_sector} → {s_subsector}'
             )
 
             # 국내상장(KRX)과 미국 직접상장 ETF를 상장시장 필터에 맞게 병합한다.
@@ -2669,10 +2658,13 @@ with right:
                 _parts=[x for x in [q_krx,q_us] if isinstance(x,pd.DataFrame) and not x.empty]
                 q=pd.concat(_parts,ignore_index=True,sort=False) if _parts else pd.DataFrame()
                 if not q.empty:
+                    # 미국 직접상장 ETF를 먼저 보여줘 QQQ/QQQM 같은 핵심 ETF가 스크롤 아래로 묻히지 않게 함
+                    q=q.copy()
+                    q['_listing_priority']=q['listing_market'].map({'미국':0,'KRX':1}).fillna(2)
                     q=q.sort_values(
-                        ['theme_score','listing_market','etf_name'],
+                        ['theme_score','_listing_priority','etf_name'],
                         ascending=[False,True,True]
-                    ).reset_index(drop=True)
+                    ).drop(columns=['_listing_priority']).reset_index(drop=True)
 
             if q.empty:
                 if s_region=='국내자산' and not db_available():
@@ -2700,12 +2692,9 @@ with right:
                 })
 
                 if s_region=='해외자산':
-                    if s_market_scope=='미국상장':
-                        _scope_msg='미국 직접상장 ETF 결과입니다.'
-                    elif s_market_scope=='국내상장':
-                        _scope_msg='국내(KRX) 상장 해외자산 ETF 결과입니다.'
-                    else:
-                        _scope_msg='국내(KRX) 상장 + 미국 직접상장 ETF 통합 결과입니다.'
+                    _us_n=int((show.get('상장시장',pd.Series(dtype=str))=='미국').sum())
+                    _kr_n=int((show.get('상장시장',pd.Series(dtype=str))=='KRX').sum())
+                    _scope_msg=f'미국 직접상장 {_us_n}개 + 국내상장 해외ETF {_kr_n}개 통합 결과입니다.'
                 else:
                     _scope_msg='ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.'
                 st.success(f'{len(show):,}개 ETF를 찾았습니다. {_scope_msg}')
