@@ -100,7 +100,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 · US ETF 통합 v3</p></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
@@ -1293,36 +1293,221 @@ def _db_connect():
     return conn
 
 
-def save_local_db(master,holdings):
-    '''수집 결과를 로컬 SQLite DB에 저장하고 검색 인덱스를 생성.'''
+def save_local_db(master, holdings, status=None):
+    """기존 DB를 건드리지 않고 임시 SQLite에서 구축·검증한 뒤 교체합니다."""
     if master is None or master.empty or holdings is None or holdings.empty:
-        raise RuntimeError('저장할 ETF 데이터가 없습니다.')
+        raise RuntimeError('저장할 ETF 데이터가 없습니다. 기존 DB를 유지합니다.')
 
-    m=master.copy()
-    h=holdings.copy()
-
-    for df in (m,h):
+    m = master.copy()
+    h = holdings.copy()
+    for df in (m, h):
         if 'etf_code' in df.columns:
-            df['etf_code']=df['etf_code'].astype(str).str.zfill(6)
+            df['etf_code'] = df['etf_code'].astype(str).str.zfill(6)
     if 'holding_code' in h.columns:
-        h['holding_code']=h['holding_code'].fillna('').astype(str)
+        h['holding_code'] = h['holding_code'].fillna('').astype(str)
     if 'holding_name' in h.columns:
-        h['holding_name']=h['holding_name'].fillna('').astype(str)
+        h['holding_name'] = h['holding_name'].fillna('').astype(str)
     if 'weight' in h.columns:
-        h['weight']=pd.to_numeric(h['weight'],errors='coerce').fillna(0.0)
+        h['weight'] = pd.to_numeric(h['weight'], errors='coerce').fillna(0.0)
 
-    with _db_connect() as conn:
-        m.to_sql('etf_master',conn,if_exists='replace',index=False)
-        h.to_sql('etf_holdings',conn,if_exists='replace',index=False)
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_master_etf_code ON etf_master(etf_code)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_master_tree ON etf_master(asset_region,asset_class,sector,subsector)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_hold_etf_code ON etf_holdings(etf_code)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_hold_stock_code ON etf_holdings(holding_code)')
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_hold_stock_name ON etf_holdings(holding_name)')
-        # 원본 ETF DB가 바뀌면 기존 자동 테마 매핑은 무효화
-        conn.execute('DROP TABLE IF EXISTS etf_theme_map')
-        conn.execute('DROP TABLE IF EXISTS theme_meta')
-        conn.commit()
+    # Build in isolation; failure in KRX data or SQL construction will not wipe
+    # the previous usable DB. SQLite backup writes a consistent snapshot.
+    import tempfile as _tempfile
+    DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with _tempfile.NamedTemporaryFile(suffix='.sqlite3', delete=False) as f:
+        staging = Path(f.name)
+    try:
+        with sqlite3.connect(str(staging)) as conn:
+            m.to_sql('etf_master', conn, if_exists='replace', index=False)
+            h.to_sql('etf_holdings', conn, if_exists='replace', index=False)
+            conn.execute('CREATE INDEX idx_master_etf_code ON etf_master(etf_code)')
+            conn.execute('CREATE INDEX idx_master_tree ON etf_master(asset_region,asset_class,sector,subsector)')
+            conn.execute('CREATE INDEX idx_hold_etf_code ON etf_holdings(etf_code)')
+            conn.execute('CREATE INDEX idx_hold_stock_code ON etf_holdings(holding_code)')
+            conn.execute('CREATE INDEX idx_hold_stock_name ON etf_holdings(holding_name)')
+            conn.execute('CREATE TABLE etf_sync_meta (key TEXT PRIMARY KEY, value TEXT)')
+            if status is not None:
+                conn.execute("INSERT INTO etf_sync_meta(key,value) VALUES('collection_status',?)",
+                             (json.dumps(status, ensure_ascii=False, default=str),))
+            conn.commit()
+            if conn.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                raise ValueError('SQLite 검증 실패: 기존 DB를 유지합니다.')
+            if conn.execute('SELECT COUNT(*) FROM etf_master').fetchone()[0] == 0:
+                raise ValueError('ETF 데이터가 0건입니다.')
+
+        with sqlite3.connect(str(staging)) as src, sqlite3.connect(str(DB_FILE), timeout=60) as dst:
+            src.backup(dst)
+    finally:
+        staging.unlink(missing_ok=True)
+
+
+# =========================================================
+# HANAV CLOUD SQLITE SYNC — PRIVATE SUPABASE STORAGE
+# Last good snapshot is kept remotely, and restored on a new server start.
+# SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_BUCKET are server secrets.
+# Never expose the service-role key in the repository or the UI.
+# =========================================================
+import hashlib as _db_hashlib
+import tempfile as _db_tempfile
+from urllib.parse import quote as _db_quote
+
+_DB_CLOUD_OBJECT = 'etf/etf_finder.db'
+_DB_CLOUD_CONFIG_ERROR = ''
+
+
+def _db_cloud_config():
+    url = str(_secret_or_env('SUPABASE_URL') or '').strip().rstrip('/')
+    key = str(_secret_or_env('SUPABASE_SERVICE_ROLE_KEY') or '').strip()
+    bucket = str(_secret_or_env('SUPABASE_BUCKET') or 'hanav-finder-db').strip()
+    if not url or not key:
+        return None
+    if not url.startswith('https://'):
+        raise RuntimeError('SUPABASE_URL은 https:// 주소여야 합니다.')
+    if not bucket or '/' in bucket or '..' in bucket:
+        raise RuntimeError('SUPABASE_BUCKET 설정을 확인해 주세요.')
+    prefix = url + '/storage/v1/object/'
+    suffix = _db_quote(bucket, safe='') + '/' + _db_quote(_DB_CLOUD_OBJECT, safe='/')
+    return {'read_url': prefix + 'authenticated/' + suffix,
+             'write_url': prefix + suffix,
+             'headers': {'apikey': key, 'Authorization': 'Bearer ' + key},
+             'bucket': bucket}
+
+
+def _db_valid_snapshot(raw):
+    if not raw or not raw.startswith(b'SQLite format 3\x00'):
+        raise ValueError('백업 파일이 SQLite 형식이 아닙니다.')
+    with _db_tempfile.NamedTemporaryFile(suffix='.sqlite3', delete=False) as f:
+        f.write(raw)
+        tmp = Path(f.name)
+    try:
+        with sqlite3.connect(str(tmp)) as conn:
+            if conn.execute('PRAGMA integrity_check').fetchone()[0] != 'ok':
+                raise ValueError('DB 무결성 검사에 실패했습니다.')
+            tables = {x[0] for x in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )}
+            required = {'etf_master', 'etf_holdings'}
+            if not required.issubset(tables):
+                raise ValueError('다른 종류의 DB 파일이 저장되어 있습니다.')
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _db_sqlite_snapshot():
+    path = DB_FILE
+    if not path.exists():
+        raise FileNotFoundError('저장된 로컬 DB가 없습니다.')
+    with _db_tempfile.NamedTemporaryFile(suffix='.sqlite3', delete=False) as f:
+        tmp = Path(f.name)
+    try:
+        with sqlite3.connect(str(path), timeout=30) as src, sqlite3.connect(str(tmp)) as dst:
+            src.backup(dst)  # WAL에 아직 남아 있는 데이터까지 포함
+        raw = tmp.read_bytes()
+        _db_valid_snapshot(raw)
+        return raw
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _db_install_snapshot(raw):
+    _db_valid_snapshot(raw)
+    with _db_tempfile.NamedTemporaryFile(suffix='.sqlite3', delete=False) as f:
+        f.write(raw)
+        tmp = Path(f.name)
+    try:
+        DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # SQLite backup (rather than replacing a live WAL DB) keeps database consistency.
+        with sqlite3.connect(str(tmp)) as src, sqlite3.connect(str(DB_FILE)) as dst:
+            src.backup(dst)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def _db_cloud_push(show_feedback=False):
+    cfg = _db_cloud_config()
+    if cfg is None:
+        return False
+    try:
+        raw = _db_sqlite_snapshot()
+        headers = dict(cfg['headers'])
+        headers.update({'Content-Type': 'application/x-sqlite3',
+                        'x-upsert': 'true', 'cache-control': 'no-cache'})
+        response = requests.post(cfg['write_url'], headers=headers, data=raw,
+                                 timeout=(10, 180))
+        response.raise_for_status()
+        st.session_state['_db_cloud_saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        st.session_state.pop('_db_cloud_error', None)
+        if show_feedback:
+            st.success('☁️ 최신 SQLite DB가 비공개 저장소에 백업되었습니다.')
+        return True
+    except Exception as exc:
+        st.session_state['_db_cloud_error'] = str(exc)
+        if show_feedback:
+            st.error(f'클라우드 DB 백업 실패. 현재 서버의 DB는 유지됩니다: {exc}')
+        return False
+
+
+def _db_cloud_restore_on_boot():
+    # Once per Python process, before SQLite access. All browser sessions share it.
+    cfg = _db_cloud_config()
+    if cfg is None:
+        return 'not_configured'
+    try:
+        response = requests.get(cfg['read_url'], headers=cfg['headers'],
+                                timeout=(10, 180))
+        if response.status_code == 404:
+            # Storage is empty: seed it with a preexisting, valid DB if present.
+            if DB_FILE.exists():
+                try:
+                    _db_valid_snapshot(_db_sqlite_snapshot())
+                    if _db_cloud_push():
+                        return 'seeded'
+                except Exception:
+                    pass
+            return 'remote_empty'
+        response.raise_for_status()
+        _db_install_snapshot(response.content)
+        return 'restored'
+    except Exception as exc:
+        st.session_state['_db_cloud_error'] = '초기 DB 동기화 실패: ' + str(exc)
+        return 'offline_fallback'
+
+
+@st.cache_resource(show_spinner=False)
+def _db_boot_once(bucket_object, config_fingerprint):
+    # No key in cache key: fingerprint only, not the secret. Cache is per server.
+    return _db_cloud_restore_on_boot()
+
+
+def _db_startup_restore():
+    try:
+        cfg = _db_cloud_config()
+        fingerprint = _db_hashlib.sha256(
+            (cfg['read_url'] + cfg['headers']['apikey']).encode('utf-8')
+        ).hexdigest() if cfg else 'disabled'
+        return _db_boot_once(_DB_CLOUD_OBJECT, fingerprint)
+    except Exception as exc:
+        st.session_state['_db_cloud_error'] = str(exc)
+        return 'invalid_config'
+
+
+def _db_cloud_indicator():
+    try:
+        cfg = _db_cloud_config()
+    except Exception as exc:
+        st.error(f'클라우드 DB 설정 오류: {exc}')
+        return
+    if cfg is None:
+        st.warning('영구 DB 동기화 미설정: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY가 필요합니다. 현재 SQLite는 재배포 시 사라질 수 있습니다.')
+    else:
+        if st.session_state.get('_db_cloud_error'):
+            st.warning('☁️ 최근 동기화 오류: ' + st.session_state['_db_cloud_error'])
+        else:
+            st.caption('☁️ 비공개 클라우드 DB 연결됨 · 서버 재시작 시 마지막 저장본 자동 복원')
+        if st.session_state.get('_db_cloud_saved_at'):
+            st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
+        if st.button('☁️ 현재 DB 영구 저장', key='etf' + '_cloud_save_btn'):
+            _db_cloud_push(show_feedback=True)
 
 
 def migrate_existing_csv_to_db():
@@ -1332,11 +1517,12 @@ def migrate_existing_csv_to_db():
     if not (MASTER_FILE.exists() and HOLDINGS_FILE.exists()):
         return False
 
-    master,holdings,_=load_snapshot()
+    master,holdings,status=load_snapshot()
     if master.empty or holdings.empty:
         return False
 
-    save_local_db(master,holdings)
+    save_local_db(master,holdings,status=status)
+    _db_cloud_push()
     return True
 
 
@@ -2367,13 +2553,21 @@ def render_etf_detail(etf_code,key_prefix='detail'):
 
 # 기존 CSV가 있다면 네트워크 접속 없이 SQLite로 1회 변환
 try:
+    _db_startup_state=_db_startup_restore()
     _migrated=migrate_existing_csv_to_db()
 except Exception:
     _migrated=False
 
 _status={}
 try:
-    if STATUS_FILE.exists():
+    if db_available():
+        with _db_connect() as _c:
+            _exists=_c.execute("SELECT name FROM sqlite_master WHERE name='etf_sync_meta'").fetchone()
+            if _exists:
+                _r=_c.execute("SELECT value FROM etf_sync_meta WHERE key='collection_status'").fetchone()
+                if _r:
+                    _status=json.loads(_r[0])
+    if not _status and STATUS_FILE.exists():
         _status=json.loads(STATUS_FILE.read_text(encoding='utf-8'))
 except Exception:
     _status={}
@@ -2383,6 +2577,8 @@ _theme_error=''
 if db_available():
     try:
         _theme_info=ensure_theme_map()
+        if _theme_info.get('rebuilt'):
+            _db_cloud_push()
     except Exception as _e:
         _theme_error=str(_e)
 
@@ -2398,6 +2594,7 @@ _theme_stats=theme_map_stats()
 
 
 st.subheader('💾 로컬 ETF 데이터베이스')
+_db_cloud_indicator()
 
 with st.expander('🧪 배포환경 진단', expanded=False):
     import sys as _sys
@@ -2441,6 +2638,7 @@ if db_available():
         if st.button('🧠 테마 매핑 다시 생성',key='rebuild_theme_map'):
             with st.spinner('로컬 DB에서 테마를 다시 분류하는 중...'):
                 _new_theme=ensure_theme_map(force=True)
+                _db_cloud_push()
                 st.cache_data.clear()
             st.success(
                 f"테마 매핑 완료 · ETF {_new_theme.get('mapped_etfs',0):,}개 · "
@@ -2477,8 +2675,11 @@ with st.expander('🔄 KRX에서 로컬 DB 새로고침',expanded=not db_availab
 
         try:
             _m,_h,_status=collect_krx_etf_snapshot(progress=_progress)
-            save_local_db(_m,_h)
+            save_local_db(_m,_h,status=_status)
+            _cloud_ok=_db_cloud_push()
             st.cache_data.clear()
+            if _db_cloud_config() and not _cloud_ok:
+                st.warning('클라우드 저장에 실패했습니다. 지금 서버에서는 검색할 수 있지만 재부팅 전에 백업 설정을 확인해 주세요.')
 
             bar.progress(1.0,text='로컬 DB 저장 완료')
             st.success(
@@ -2576,8 +2777,15 @@ with left:
         horizontal=True,
         key='tree_region'
     )
-    # 해외자산은 국내(KRX) 상장 해외ETF + 미국 직접상장 ETF를 자동 통합 검색합니다.
-    market_scope='전체' if region=='해외자산' else '국내상장'
+    if region=='해외자산':
+        market_scope=st.radio(
+            'STEP 1-1 · ETF 상장시장',
+            ['전체','국내상장','미국상장'],
+            horizontal=True,
+            key='tree_listing_market'
+        )
+    else:
+        market_scope='국내상장'
 
     asset=st.selectbox(
         'STEP 2 · 자산군',
@@ -2607,7 +2815,7 @@ with left:
         key='tree_search_button'
     )
 
-    current_tree=(region,asset,sector,subsector)
+    current_tree=(region,asset,sector,subsector,market_scope)
 
     if tree_search_clicked:
         st.session_state['tree_search_params']=current_tree
@@ -2617,7 +2825,7 @@ with left:
     if saved_tree and saved_tree!=current_tree:
         st.caption('선택 조건이 변경되었습니다. 새 조건으로 보려면 검색 버튼을 다시 눌러주세요.')
     else:
-        st.caption('해외자산은 국내상장 해외ETF와 미국 직접상장 ETF를 자동으로 함께 검색합니다. QQQ·QQQM·SPY·SOXX 등 포함.')
+        st.caption('KRX ETF는 저장된 로컬 DB를 사용하고, 해외자산에서는 미국상장 대표 ETF도 함께 검색합니다.')
 
 with right:
     st.subheader('🔎 조건에 맞는 ETF')
@@ -2630,12 +2838,16 @@ with right:
         if not params:
             st.info('검색 조건을 선택해 주세요.')
         else:
-            # v3: 해외자산이면 상장시장 선택 없이 국내상장 + 미국직접상장을 자동 통합
-            s_region,s_asset,s_sector,s_subsector=params[:4]
-            s_market_scope='전체' if s_region=='해외자산' else '국내상장'
+            # 기존 세션(4개 값)이 남아 있어도 안전하게 처리
+            if len(params)>=5:
+                s_region,s_asset,s_sector,s_subsector,s_market_scope=params[:5]
+            else:
+                s_region,s_asset,s_sector,s_subsector=params[:4]
+                s_market_scope='전체' if s_region=='해외자산' else '국내상장'
 
+            _market_text=(f' → {s_market_scope}' if s_region=='해외자산' else '')
             st.caption(
-                f'검색조건: {s_region} → {s_asset} → {s_sector} → {s_subsector}'
+                f'검색조건: {s_region}{_market_text} → {s_asset} → {s_sector} → {s_subsector}'
             )
 
             # 국내상장(KRX)과 미국 직접상장 ETF를 상장시장 필터에 맞게 병합한다.
@@ -2658,13 +2870,10 @@ with right:
                 _parts=[x for x in [q_krx,q_us] if isinstance(x,pd.DataFrame) and not x.empty]
                 q=pd.concat(_parts,ignore_index=True,sort=False) if _parts else pd.DataFrame()
                 if not q.empty:
-                    # 미국 직접상장 ETF를 먼저 보여줘 QQQ/QQQM 같은 핵심 ETF가 스크롤 아래로 묻히지 않게 함
-                    q=q.copy()
-                    q['_listing_priority']=q['listing_market'].map({'미국':0,'KRX':1}).fillna(2)
                     q=q.sort_values(
-                        ['theme_score','_listing_priority','etf_name'],
+                        ['theme_score','listing_market','etf_name'],
                         ascending=[False,True,True]
-                    ).drop(columns=['_listing_priority']).reset_index(drop=True)
+                    ).reset_index(drop=True)
 
             if q.empty:
                 if s_region=='국내자산' and not db_available():
@@ -2692,9 +2901,12 @@ with right:
                 })
 
                 if s_region=='해외자산':
-                    _us_n=int((show.get('상장시장',pd.Series(dtype=str))=='미국').sum())
-                    _kr_n=int((show.get('상장시장',pd.Series(dtype=str))=='KRX').sum())
-                    _scope_msg=f'미국 직접상장 {_us_n}개 + 국내상장 해외ETF {_kr_n}개 통합 결과입니다.'
+                    if s_market_scope=='미국상장':
+                        _scope_msg='미국 직접상장 ETF 결과입니다.'
+                    elif s_market_scope=='국내상장':
+                        _scope_msg='국내(KRX) 상장 해외자산 ETF 결과입니다.'
+                    else:
+                        _scope_msg='국내(KRX) 상장 + 미국 직접상장 ETF 통합 결과입니다.'
                 else:
                     _scope_msg='ETF명·추종지수·구성종목 기반 자동 테마 매핑 결과입니다.'
                 st.success(f'{len(show):,}개 ETF를 찾았습니다. {_scope_msg}')
