@@ -1361,8 +1361,22 @@ def _db_cloud_config():
     bucket = str(_secret_or_env('SUPABASE_BUCKET') or 'hanav-finder-db').strip()
     if not url or not key:
         return None
+    # Fail before a network request if a Secrets example was pasted verbatim.
+    # Non-ASCII hostnames are often automatically rewritten to punycode, making
+    # placeholder errors look like temporary DNS outages.
+    from urllib.parse import urlsplit as _db_urlsplit
     if not url.startswith('https://'):
-        raise RuntimeError('SUPABASE_URL은 https:// 주소여야 합니다.')
+        raise RuntimeError('SUPABASE_URL은 https://로 시작하는 실제 프로젝트 주소여야 합니다.')
+    _url_parts = _db_urlsplit(url)
+    _host = (_url_parts.hostname or '').lower()
+    if (not _host or not _host.isascii() or _host.startswith('xn--')
+            or '프로젝트' in url or 'project-id' in url.lower()
+            or 'projectid' in url.lower() or _host == 'id.supabase.co'
+            or _url_parts.username or _url_parts.password or _url_parts.query
+            or _url_parts.fragment or _url_parts.path not in ('', '/')):
+        raise RuntimeError('SUPABASE_URL에 예시/잘못된 주소가 입력되었습니다. Supabase 대시보드의 Project URL을 그대로 복사해 주세요.')
+    if not _host.endswith('.supabase.co') or _host.count('.') < 2:
+        raise RuntimeError('SUPABASE_URL의 도메인을 확인해 주세요. 예: https://실제프로젝트참조값.supabase.co')
     if not bucket or '/' in bucket or '..' in bucket:
         raise RuntimeError('SUPABASE_BUCKET 설정을 확인해 주세요.')
     prefix = url + '/storage/v1/object/'
@@ -1389,6 +1403,10 @@ def _db_valid_snapshot(raw):
             required = {'etf_master', 'etf_holdings'}
             if not required.issubset(tables):
                 raise ValueError('다른 종류의 DB 파일이 저장되어 있습니다.')
+            etf_count = conn.execute('SELECT COUNT(*) FROM etf_master').fetchone()[0]
+            holdings_count = conn.execute('SELECT COUNT(*) FROM etf_holdings').fetchone()[0]
+            if etf_count < 1 or holdings_count < 1:
+                raise ValueError('ETF 또는 구성종목이 0건인 DB는 백업/복원하지 않습니다.')
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -1435,6 +1453,12 @@ def _db_cloud_push(show_feedback=False):
         response = requests.post(cfg['write_url'], headers=headers, data=raw,
                                  timeout=(10, 180))
         response.raise_for_status()
+        # A successful POST alone does not prove the snapshot can be restored.
+        # Check the private object and content hash before reporting success.
+        check = requests.get(cfg['read_url'], headers=cfg['headers'], timeout=(10,180))
+        check.raise_for_status()
+        if _db_hashlib.sha256(check.content).digest() != _db_hashlib.sha256(raw).digest():
+            raise RuntimeError('업로드 후 재다운로드한 DB 파일이 일치하지 않습니다. 클라우드 저장을 완료로 표시하지 않습니다.')
         st.session_state['_db_cloud_saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         st.session_state.pop('_db_cloud_error', None)
         if show_feedback:
@@ -1508,6 +1532,55 @@ def _db_cloud_indicator():
             st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
         if st.button('☁️ 현재 DB 영구 저장', key='etf' + '_cloud_save_btn'):
             _db_cloud_push(show_feedback=True)
+
+
+def _db_manual_backup_controls():
+    """Independent rescue route when remote Storage settings/network fail."""
+    with st.expander('📦 DB 직접 백업 · 복원 (재배포 전에 백업 권장)', expanded=False):
+        st.caption('이 기능은 Supabase 연결 없이 현재 서버의 SQLite를 .db 파일로 내려받습니다. '
+                   '브라우저로 다운로드한 파일은 외부 클라우드에 자동 전송되지 않습니다.')
+        if not db_available():
+            st.warning('현재 서버에서 유효한 ETF DB를 찾지 못했습니다. 복원 파일이 있으면 아래에서 업로드하세요.')
+        if db_available() and st.button('📦 현재 DB 백업파일 준비', key='_etf_local_export_prep'):
+            try:
+                st.session_state['_etf_local_export'] = _db_sqlite_snapshot()
+                st.success('백업 파일 준비 완료. 아래 다운로드 버튼으로 PC에 보관하세요.')
+            except Exception as exc:
+                st.error(f'백업 준비 실패: {exc}')
+        raw = st.session_state.get('_etf_local_export')
+        if raw:
+            st.download_button('⬇️ etf_finder.db 다운로드', data=raw,
+                file_name=f'etf_finder_backup_{datetime.now():%Y%m%d}.db',
+                mime='application/octet-stream', key='_etf_local_export_download')
+            st.caption(f'준비된 백업 용량: {len(raw):,}바이트 · 다운로드 완료 여부를 확인하세요.')
+        st.divider()
+        st.caption('복원은 현재 서버 DB를 덮어씁니다. 기존 DB가 살아 있다면 먼저 다운로드해 두세요.')
+        uploaded = st.file_uploader('보관 중인 SQLite DB 파일 선택',
+                                    type=['db', 'sqlite3'], key='_etf_restore_file')
+        approved = st.checkbox('현재 서버 DB 덮어쓰기를 이해하고 복원합니다', key='_etf_restore_confirm')
+        if st.button('📂 DB 복원 실행', key='_etf_restore_execute',
+                     disabled=uploaded is None or not approved):
+            try:
+                candidate = uploaded.getvalue()
+                _db_valid_snapshot(candidate)
+                if db_available():
+                    st.session_state['_etf_pre_restore_backup'] = _db_sqlite_snapshot()
+                _db_install_snapshot(candidate)
+                st.cache_data.clear()
+                st.success('현재 서버 DB 복원이 완료되었습니다.')
+                try:
+                    if _db_cloud_config() and not _db_cloud_push():
+                        st.warning('로컬 복원은 성공했지만 클라우드 백업은 실패했습니다. 설정을 확인하세요.')
+                except Exception as ex:
+                    st.warning(f'로컬 복원 성공 / 클라우드 백업 설정 오류: {ex}')
+                st.rerun()
+            except Exception as exc:
+                st.error(f'복원 실패. DB 형식/무결성을 확인해 주세요: {exc}')
+        before = st.session_state.get('_etf_pre_restore_backup')
+        if before:
+            st.download_button('⬇️ 복원 이전 DB 다운로드 (긴급)', data=before,
+                file_name='etf_finder_before_restore.db',
+                mime='application/octet-stream', key='_etf_pre_restore_download')
 
 
 def migrate_existing_csv_to_db():
@@ -2595,6 +2668,7 @@ _theme_stats=theme_map_stats()
 
 st.subheader('💾 로컬 ETF 데이터베이스')
 _db_cloud_indicator()
+_db_manual_backup_controls()
 
 with st.expander('🧪 배포환경 진단', expanded=False):
     import sys as _sys
