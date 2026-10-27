@@ -43,13 +43,51 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 hr{border-color:#D4E3DC}
 </style>''', unsafe_allow_html=True)
 
-# Password gate: configure APP_PASSWORD in this app's Streamlit Secrets.
-def _etf_app_password():
+# Password gate: configure APP_PASSWORD in Cloud Secrets or local file/env.
+# Local and Cloud secrets: support Streamlit Secrets, app-directory secrets.toml,
+# and environment variables. Do not commit your local secrets file to GitHub.
+from pathlib import Path as _etf_Path
+import tomllib as _etf_tomllib
+
+# Streamlit itself uses .streamlit/ by default. Local Windows installations may
+# use a folder named streamlit/; load it explicitly without weakening auth.
+_ETF_LOCAL_SECRETS_PATHS = (
+    _etf_Path(__file__).resolve().parent / '.streamlit' / 'secrets.toml',
+    _etf_Path(__file__).resolve().parent / 'streamlit' / 'secrets.toml',
+)
+
+
+def _etf_secret_value(name):
+    """Read credential without printing it. Secrets fail closed when unavailable."""
     try:
-        value = st.secrets.get('APP_PASSWORD', '')
-        return value if isinstance(value, str) else ''
-    except Exception:
-        return ''
+        value = st.secrets.get(name, '')
+        if isinstance(value, str) and value.strip():
+            return value
+    except (Exception,):
+        pass
+    value = os.environ.get(name, '')
+    if isinstance(value, str) and value.strip():
+        return value
+    # Resolve settings relative to app.py even when Streamlit is launched from
+    # another working directory. Both folder names are supported.
+    for local_file in _ETF_LOCAL_SECRETS_PATHS:
+        try:
+            if not local_file.is_file():
+                continue
+            with local_file.open('rb') as fh:
+                data = _etf_tomllib.load(fh)
+            value = data.get(name, '')
+            if isinstance(value, str) and value.strip():
+                return value
+        except (OSError, ValueError, TypeError):
+            # Fail closed: never accept a missing or malformed password.
+            continue
+    return ''
+
+
+
+def _etf_app_password():
+    return _etf_secret_value('APP_PASSWORD')
 
 
 def _etf_check_password():
@@ -73,7 +111,11 @@ st.session_state.setdefault('_etf_authenticated', False)
 st.session_state.setdefault('_etf_login_error', False)
 
 if not _etf_app_password():
-    st.error('APP_PASSWORD가 설정되지 않았습니다. 이 앱의 Streamlit Secrets에 APP_PASSWORD를 추가해 주세요.')
+    st.error('APP_PASSWORD 설정을 읽지 못했습니다. 로컬 설정파일 위치와 확장자를 확인하세요.')
+    st.info('로컬 설정파일: app.py 옆의 `streamlit/secrets.toml` 또는 `.streamlit/secrets.toml`에 APP_PASSWORD를 입력하세요. PowerShell 환경변수도 지원합니다.')
+    for _local_path in _ETF_LOCAL_SECRETS_PATHS:
+        st.caption(f'설정 탐색: {_local_path} — {"파일 있음" if _local_path.is_file() else "파일 없음"}')
+    st.caption('secrets.toml.txt 오기재 여부를 확인하세요. 실제 비밀번호나 키는 화면·GitHub에 공유하지 마세요.')
     st.stop()
 
 if not st.session_state['_etf_authenticated']:
@@ -114,11 +156,7 @@ _ADMIN_LOCK_SECONDS = 5 * 60
 
 
 def _admin_secret(name):
-    try:
-        value = st.secrets.get(name, '')
-        return value if isinstance(value, str) else ''
-    except Exception:
-        return ''
+    return _etf_secret_value(name)
 
 
 def _admin_configured():
@@ -179,6 +217,36 @@ def _admin_sign_out():
         st.session_state.pop(key, None)
 
 
+def _authorize_krx_refresh(password, acknowledged):
+    """Fresh password challenge for each KRX refresh, even if admin role is active.
+
+    A successful login to the viewer area or a previously unlocked admin session
+    is never enough to authorize a new data-collection/write operation.
+    """
+    if not st.session_state.get('_etf_authenticated', False):
+        raise PermissionError('일반 사용자 로그인이 필요합니다.')
+    if not _admin_configured():
+        raise PermissionError('ADMIN_PASSWORD 또는 ADMIN_PASSWORD_HASH가 설정되지 않았습니다.')
+    locked_until = float(st.session_state.get('_etf_admin_lock_until', 0))
+    if _admin_time.monotonic() < locked_until:
+        raise PermissionError('관리자 인증이 일시 제한되었습니다. 잠시 후 다시 시도하세요.')
+    if not acknowledged:
+        raise ValueError('현재 DB 백업 확인에 체크해야 합니다.')
+    if not _admin_password_matches(password):
+        failures = int(st.session_state.get('_etf_admin_failures', 0)) + 1
+        st.session_state['_etf_admin_failures'] = failures
+        if failures >= 5:
+            st.session_state['_etf_admin_lock_until'] = _admin_time.monotonic() + _ADMIN_LOCK_SECONDS
+            st.session_state['_etf_admin_failures'] = 0
+        raise PermissionError('관리자 비밀번호가 올바르지 않습니다. DB 새로고침을 시작하지 않았습니다.')
+    st.session_state['_etf_admin_fingerprint'] = _admin_fingerprint()
+    st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
+    st.session_state['_etf_admin_failures'] = 0
+    st.session_state.pop('_etf_admin_lock_until', None)
+    _require_admin('KRX DB 새로고침')
+    return True
+
+
 def _admin_access_panel():
     with st.sidebar:
         st.divider()
@@ -222,7 +290,7 @@ _admin_access_panel()
 
 
 st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
-st.caption('🛡️ 관리자 모드' if _is_admin() else '🔎 일반 사용자 모드 · 조회 전용')
+st.caption(('🛡️ 관리자 모드' if _is_admin() else '🔎 일반 사용자 모드 · 조회 전용') + ' · 보안패치 R3 / KRX 갱신 시 매회 재인증 · 로컬 설정 호환')
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
@@ -1179,12 +1247,8 @@ STATUS_FILE=DATA_DIR/'collection_status.json'
 DB_FILE=DATA_DIR/'etf_finder.db'
 
 def _secret_or_env(name):
-    try:
-        if name in st.secrets:
-            return str(st.secrets[name]).strip()
-    except Exception:
-        pass
-    return os.getenv(name, '').strip()
+    # Use the same secure fallback locations for KRX/Supabase as for login.
+    return _etf_secret_value(name).strip()
 
 def _import_pykrx():
     # KRX 로그인 정보는 .streamlit/secrets.toml 또는 Streamlit Cloud Secrets에서 자동 사용.
@@ -1193,7 +1257,7 @@ def _import_pykrx():
     if not krx_id or not krx_pw:
         raise RuntimeError(
             'KRX 로그인 정보가 없습니다. '
-            '로컬은 .streamlit/secrets.toml, Streamlit Cloud는 App Settings → Secrets에 '
+            '로컬은 streamlit/secrets.toml 또는 .streamlit/secrets.toml, Streamlit Cloud는 App Settings → Secrets에 '
             'KRX_ID와 KRX_PW를 저장해 주세요.'
         )
 
@@ -2879,52 +2943,67 @@ if db_available():
 else:
     st.info('아직 로컬 DB가 없습니다. 아래 버튼을 한 번 실행해 최초 DB를 생성하세요.')
 
-if _is_admin():
-    _krx_ready=bool(_secret_or_env('KRX_ID') and _secret_or_env('KRX_PW'))
-    if _krx_ready:
-        st.caption('🔐 KRX 로그인 정보: Secrets 자동 사용 · pykrx는 requirements.txt에서 배포 시 설치')
+# Unlike the general admin panel, KRX refresh requires a *fresh* password
+# for every run. The request button is visible to viewers, but no mutation
+# or network collection can occur before a valid challenge response.
+_krx_ready = bool(_secret_or_env('KRX_ID') and _secret_or_env('KRX_PW'))
+if _is_admin() and not _krx_ready:
+    st.warning('KRX 업데이트용 Secrets가 없습니다. KRX_ID와 KRX_PW를 확인해 주세요.')
+
+with st.expander('🔄 KRX에서 로컬 DB 새로고침 (관리자 인증 필요)', expanded=False):
+    st.caption('전체 ETF DB를 새로 수집하고 현재 DB를 교체하는 작업입니다. '
+               '관리자 모드로 로그인한 상태여도 매번 관리자 비밀번호를 다시 입력해야 합니다.')
+    if not _admin_configured():
+        st.error('관리자 비밀번호가 아직 설정되지 않았습니다. Streamlit Secrets에 ADMIN_PASSWORD를 설정하세요.')
     else:
-        st.warning('KRX 업데이트용 Secrets가 없습니다. .streamlit/secrets.toml에 KRX_ID와 KRX_PW를 저장해 주세요.')
-
-    with st.expander('🔄 KRX에서 로컬 DB 새로고침',expanded=not db_available()):
-        st.caption(
-            '이 버튼을 누를 때만 KRX 전체 데이터를 조회합니다. '
-            '저장 완료 후 종목검색·테크트리·ETF 조회는 모두 로컬 DB에서 실행됩니다.'
-        )
-
-        if st.button('KRX 전체 데이터로 로컬 DB 업데이트',type='primary',use_container_width=True):
-            _require_admin('KRX 전체 DB 갱신')
-            if not _krx_ready:
-                st.error('secrets.toml의 KRX_ID / KRX_PW를 먼저 확인해 주세요.')
-                st.stop()
-
-            bar=st.progress(0,text='KRX ETF 데이터를 로컬 DB용으로 수집하는 중...')
-
-            def _progress(i,total,ticker,failed):
-                # Extend role during an active, server-side collection.
-                _require_admin('KRX 데이터 수집 진행')
-                st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
-                bar.progress(
-                    min(i/max(total,1),1.0),
-                    text=f'{i:,}/{total:,} · {ticker} · 실패 {failed:,}건'
-                )
-
-            try:
-                _m,_h,_status=collect_krx_etf_snapshot(progress=_progress)
-                save_local_db(_m,_h,status=_status)
-                _cloud_ok=_db_cloud_push()
-                st.cache_data.clear()
-                if _db_cloud_config() and not _cloud_ok:
-                    st.warning('클라우드 저장에 실패했습니다. 지금 서버에서는 검색할 수 있지만 재부팅 전에 백업 설정을 확인해 주세요.')
-
-                bar.progress(1.0,text='로컬 DB 저장 완료')
-                st.success(
-                    f"기준일 {_status['as_of']} · ETF {_status['success_etfs']:,}개 · "
-                    f"구성종목 {_status['holding_rows']:,}건을 etf_finder.db에 저장했습니다."
-                )
+        if st.button('🔄 DB 새로고침 요청', key='_etf_krx_refresh_request', use_container_width=True):
+            st.session_state['_etf_krx_refresh_pending'] = True
+        if st.session_state.get('_etf_krx_refresh_pending', False):
+            st.warning('🔐 관리자 확인 전에는 데이터 수집·DB 변경을 실행하지 않습니다.')
+            with st.form('_etf_krx_refresh_confirm', clear_on_submit=True):
+                _krx_password = st.text_input('관리자 비밀번호 재입력', type='password',
+                                              key='_etf_krx_refresh_secret')
+                _krx_ack = st.checkbox('현재 DB를 별도로 백업했으며 갱신 작업을 진행합니다',
+                                       key='_etf_krx_refresh_ack')
+                _krx_submit = st.form_submit_button('🔐 인증 후 KRX DB 갱신 실행',
+                                                    type='primary', use_container_width=True)
+            if st.button('취소', key='_etf_krx_refresh_cancel'):
+                st.session_state['_etf_krx_refresh_pending'] = False
                 st.rerun()
-            except Exception as e:
-                st.error(f'업데이트 실패: {e}')
+            if _krx_submit:
+                try:
+                    _authorize_krx_refresh(_krx_password, _krx_ack)
+                    if not _krx_ready:
+                        raise ValueError('Secrets의 KRX_ID / KRX_PW를 먼저 확인해 주세요.')
+                except (PermissionError, ValueError) as _auth_exc:
+                    st.error(str(_auth_exc))
+                else:
+                    # Challenge consumed. A rerun/replay must request a new password.
+                    st.session_state['_etf_krx_refresh_pending'] = False
+                    _require_admin('KRX 전체 DB 갱신')
+                    bar = st.progress(0, text='KRX ETF 데이터를 로컬 DB용으로 수집하는 중...')
+
+                    def _progress(i,total,ticker,failed):
+                        # Extend role during active processing, not between
+                        # independent refreshes. The next run requires reauth.
+                        _require_admin('KRX 데이터 수집 진행')
+                        st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
+                        bar.progress(min(i/max(total,1),1.0),
+                                     text=f'{i:,}/{total:,} · {ticker} · 실패 {failed:,}건')
+
+                    try:
+                        _m,_h,_new_status = collect_krx_etf_snapshot(progress=_progress)
+                        save_local_db(_m,_h,status=_new_status)
+                        _cloud_ok = _db_cloud_push()
+                        st.cache_data.clear()
+                        if _db_cloud_config() and not _cloud_ok:
+                            st.warning('클라우드 저장에 실패했습니다. 재부팅 전에 DB 백업을 확인해 주세요.')
+                        bar.progress(1.0, text='로컬 DB 저장 완료')
+                        st.success(f"기준일 {_new_status['as_of']} · ETF {_new_status['success_etfs']:,}개 · "
+                                   f"구성종목 {_new_status['holding_rows']:,}건을 etf_finder.db에 저장했습니다.")
+                        st.rerun()
+                    except Exception as _refresh_exc:
+                        st.error(f'DB 새로고침 실패: {_refresh_exc}')
 
 st.divider()
 
