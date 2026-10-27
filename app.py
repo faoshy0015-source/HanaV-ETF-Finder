@@ -2,6 +2,7 @@ import streamlit as st
 import altair as alt
 import os
 import hmac
+from contextlib import contextmanager
 import re
 import requests
 import sqlite3
@@ -43,51 +44,106 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 hr{border-color:#D4E3DC}
 </style>''', unsafe_allow_html=True)
 
-# Password gate: configure APP_PASSWORD in Cloud Secrets or local file/env.
-# Local and Cloud secrets: support Streamlit Secrets, app-directory secrets.toml,
-# and environment variables. Do not commit your local secrets file to GitHub.
-from pathlib import Path as _etf_Path
-import tomllib as _etf_tomllib
-
-# Streamlit itself uses .streamlit/ by default. Local Windows installations may
-# use a folder named streamlit/; load it explicitly without weakening auth.
-_ETF_LOCAL_SECRETS_PATHS = (
-    _etf_Path(__file__).resolve().parent / '.streamlit' / 'secrets.toml',
-    _etf_Path(__file__).resolve().parent / 'streamlit' / 'secrets.toml',
-)
-
-
-def _etf_secret_value(name):
-    """Read credential without printing it. Secrets fail closed when unavailable."""
+# 접속 비밀번호: Cloud Secrets 또는 로컬 설정. 별도 모드/앱을 만들지 않습니다.
+def _etf_setting(name):
     try:
-        value = st.secrets.get(name, '')
-        if isinstance(value, str) and value.strip():
-            return value
-    except (Exception,):
+        val = st.secrets.get(name)
+        if isinstance(val, str) and val.strip():
+            return val.strip()
+    except Exception:
         pass
-    value = os.environ.get(name, '')
-    if isinstance(value, str) and value.strip():
-        return value
-    # Resolve settings relative to app.py even when Streamlit is launched from
-    # another working directory. Both folder names are supported.
-    for local_file in _ETF_LOCAL_SECRETS_PATHS:
-        try:
-            if not local_file.is_file():
-                continue
-            with local_file.open('rb') as fh:
-                data = _etf_tomllib.load(fh)
-            value = data.get(name, '')
-            if isinstance(value, str) and value.strip():
-                return value
-        except (OSError, ValueError, TypeError):
-            # Fail closed: never accept a missing or malformed password.
-            continue
+    val = os.getenv(name, '')
+    if val:
+        return val.strip()
+    # Windows 사용자가 이미 만든 streamlit 폴더도 지원합니다.
+    try:
+        import tomllib
+        from pathlib import Path as _Path
+        root = _Path(__file__).resolve().parent
+        for p in (root / '.streamlit' / 'secrets.toml',
+                  root / 'streamlit' / 'secrets.toml'):
+            if p.is_file():
+                data = tomllib.loads(p.read_text(encoding='utf-8-sig'))
+                value = data.get(name, '')
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+    except (OSError, ValueError, ImportError):
+        pass
     return ''
 
 
-
 def _etf_app_password():
-    return _etf_secret_value('APP_PASSWORD')
+    return _etf_setting('APP_PASSWORD')
+
+
+# 단일 앱의 1회성 작업 인증: 관리자 모드/세션 승격 없음.
+def _etf_admin_button(label, action, *, disabled=False, button_type='secondary',
+                      use_container_width=False):
+    """사용자 클릭 -> 비밀번호 재확인 -> 이번 rerun에서 한 번만 실행 허가."""
+    flag = '_etf_admin_pending_' + action
+    if st.button(label, key='_etf_admin_request_' + action,
+                 disabled=disabled, type=button_type,
+                 use_container_width=use_container_width):
+        st.session_state[flag] = True
+    if not st.session_state.get(flag, False):
+        return False
+    st.caption('🔒 이 작업은 관리자 비밀번호 확인 후 1회만 실행됩니다.')
+    with st.form('_etf_admin_form_' + action, clear_on_submit=True):
+        entered = st.text_input('관리자 비밀번호', type='password',
+                                key='_etf_admin_password_' + action)
+        a, b = st.columns(2)
+        with a:
+            proceed = st.form_submit_button('인증 후 실행', type='primary',
+                                            use_container_width=True)
+        with b:
+            cancel = st.form_submit_button('취소', use_container_width=True)
+    if cancel:
+        st.session_state[flag] = False
+        return False
+    if not proceed:
+        return False
+    # 누르는 순간 pending 삭제. 비밀번호 실패/성공 모두 재사용할 수 없습니다.
+    st.session_state[flag] = False
+    expected = _etf_setting('ADMIN_PASSWORD')
+    if not expected:
+        st.error('ADMIN_PASSWORD 미설정: Streamlit Secrets에서 먼저 설정해야 합니다.')
+        return False
+    if len(expected) < 12 or hmac.compare_digest(expected, _etf_app_password()):
+        st.error('관리자 비밀번호는 접속 비밀번호와 달라야 하며 12자 이상이어야 합니다.')
+        return False
+    if not hmac.compare_digest(entered.encode('utf-8'), expected.encode('utf-8')):
+        st.error('관리자 비밀번호가 올바르지 않습니다. 작업을 실행하지 않았습니다.')
+        return False
+    st.session_state['_etf_admin_verified_once'] = action
+    return True
+
+
+@contextmanager
+def _etf_authorized_write(action):
+    """UI 확인만 믿지 않고 실제 변경 실행시 권한을 소비/검사."""
+    if st.session_state.pop('_etf_admin_verified_once', None) != action:
+        raise PermissionError('관리자 비밀번호 인증 없이 DB를 변경할 수 없습니다.')
+    st.session_state['_etf_admin_active_write'] = action
+    try:
+        yield
+    finally:
+        st.session_state.pop('_etf_admin_active_write', None)
+
+
+def _etf_require_write():
+    if not (st.session_state.get('_etf_admin_active_write') or
+            st.session_state.get('_etf_trusted_bootstrap')):
+        raise PermissionError('관리자 인증이 필요한 DB 변경 작업입니다.')
+
+
+@contextmanager
+def _etf_bootstrap():
+    """앱 시작 시 저장본을 로컬 DB로 로딩하는 기존 내부 처리만 허용."""
+    st.session_state['_etf_trusted_bootstrap'] = True
+    try:
+        yield
+    finally:
+        st.session_state.pop('_etf_trusted_bootstrap', None)
 
 
 def _etf_check_password():
@@ -111,11 +167,7 @@ st.session_state.setdefault('_etf_authenticated', False)
 st.session_state.setdefault('_etf_login_error', False)
 
 if not _etf_app_password():
-    st.error('APP_PASSWORD 설정을 읽지 못했습니다. 로컬 설정파일 위치와 확장자를 확인하세요.')
-    st.info('로컬 설정파일: app.py 옆의 `streamlit/secrets.toml` 또는 `.streamlit/secrets.toml`에 APP_PASSWORD를 입력하세요. PowerShell 환경변수도 지원합니다.')
-    for _local_path in _ETF_LOCAL_SECRETS_PATHS:
-        st.caption(f'설정 탐색: {_local_path} — {"파일 있음" if _local_path.is_file() else "파일 없음"}')
-    st.caption('secrets.toml.txt 오기재 여부를 확인하세요. 실제 비밀번호나 키는 화면·GitHub에 공유하지 마세요.')
+    st.error('APP_PASSWORD가 설정되지 않았습니다. 이 앱의 Streamlit Secrets에 APP_PASSWORD를 추가해 주세요.')
     st.stop()
 
 if not st.session_state['_etf_authenticated']:
@@ -142,155 +194,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-
-# =========================================================
-# Role-based access: viewer (APP_PASSWORD) and administrator.
-# This is NOT a UI-only guard: every sensitive mutation checks this role.
-# No admin credential is stored in source code or exposed to the browser.
-# =========================================================
-import hashlib as _admin_hashlib
-import time as _admin_time
-
-_ADMIN_TTL_SECONDS = 15 * 60
-_ADMIN_LOCK_SECONDS = 5 * 60
-
-
-def _admin_secret(name):
-    return _etf_secret_value(name)
-
-
-def _admin_configured():
-    # PBKDF2 hash is recommended, plain-text ADMIN_PASSWORD in Secrets is
-    # supported to make an initial migration possible; neither belongs in git.
-    return bool(_admin_secret('ADMIN_PASSWORD_HASH') or _admin_secret('ADMIN_PASSWORD'))
-
-
-def _admin_fingerprint():
-    material = _admin_secret('ADMIN_PASSWORD_HASH') or _admin_secret('ADMIN_PASSWORD')
-    return _admin_hashlib.sha256(material.encode('utf-8')).hexdigest()
-
-
-def _admin_password_matches(password):
-    if password == _etf_app_password():
-        return False
-    stored_hash = _admin_secret('ADMIN_PASSWORD_HASH')
-    if stored_hash:
-        try:
-            method, iters, salt, digest = stored_hash.split('$')
-            count = int(iters)
-            if method != 'pbkdf2_sha256' or not (200000 <= count <= 2000000):
-                return False
-            provided = _admin_hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'),
-                                                  bytes.fromhex(salt), count)
-            return hmac.compare_digest(provided, bytes.fromhex(digest))
-        except (ValueError, TypeError):
-            return False
-    configured = _admin_secret('ADMIN_PASSWORD')
-    viewer_password = _etf_app_password()
-    # A shared password MUST NOT accidentally grant administrator access.
-    # Common documentation placeholders must not become real credentials.
-    bad_fragments = ('비밀번호', '예시', 'change_me', 'your_password',
-                     'sample_password', '서버전용키', 'your_secret')
-    if (not configured or configured == viewer_password or len(configured) < 12
-            or any(x in configured.lower() for x in bad_fragments)):
-        return False
-    return hmac.compare_digest(password.encode('utf-8'), configured.encode('utf-8'))
-
-
-def _is_admin():
-    if not st.session_state.get('_etf_authenticated', False):
-        return False
-    if not _admin_configured():
-        return False
-    if st.session_state.get('_etf_admin_fingerprint') != _admin_fingerprint():
-        return False
-    return _admin_time.monotonic() < st.session_state.get('_etf_admin_until', 0)
-
-
-def _require_admin(action='관리 작업'):
-    if not _is_admin():
-        raise PermissionError(f'{action}: 관리자 권한이 필요합니다. 관리자 인증 후 다시 시도하세요.')
-
-
-def _admin_sign_out():
-    for key in ('_etf_admin_until', '_etf_admin_fingerprint', '_etf_admin_failures', '_etf_admin_lock_until'):
-        st.session_state.pop(key, None)
-
-
-def _authorize_krx_refresh(password, acknowledged):
-    """Fresh password challenge for each KRX refresh, even if admin role is active.
-
-    A successful login to the viewer area or a previously unlocked admin session
-    is never enough to authorize a new data-collection/write operation.
-    """
-    if not st.session_state.get('_etf_authenticated', False):
-        raise PermissionError('일반 사용자 로그인이 필요합니다.')
-    if not _admin_configured():
-        raise PermissionError('ADMIN_PASSWORD 또는 ADMIN_PASSWORD_HASH가 설정되지 않았습니다.')
-    locked_until = float(st.session_state.get('_etf_admin_lock_until', 0))
-    if _admin_time.monotonic() < locked_until:
-        raise PermissionError('관리자 인증이 일시 제한되었습니다. 잠시 후 다시 시도하세요.')
-    if not acknowledged:
-        raise ValueError('현재 DB 백업 확인에 체크해야 합니다.')
-    if not _admin_password_matches(password):
-        failures = int(st.session_state.get('_etf_admin_failures', 0)) + 1
-        st.session_state['_etf_admin_failures'] = failures
-        if failures >= 5:
-            st.session_state['_etf_admin_lock_until'] = _admin_time.monotonic() + _ADMIN_LOCK_SECONDS
-            st.session_state['_etf_admin_failures'] = 0
-        raise PermissionError('관리자 비밀번호가 올바르지 않습니다. DB 새로고침을 시작하지 않았습니다.')
-    st.session_state['_etf_admin_fingerprint'] = _admin_fingerprint()
-    st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
-    st.session_state['_etf_admin_failures'] = 0
-    st.session_state.pop('_etf_admin_lock_until', None)
-    _require_admin('KRX DB 새로고침')
-    return True
-
-
-def _admin_access_panel():
-    with st.sidebar:
-        st.divider()
-        if _is_admin():
-            st.success('🛡️ 관리자 모드 · DB 관리 가능')
-            remaining = max(0, int(st.session_state.get('_etf_admin_until', 0) - _admin_time.monotonic()))
-            st.caption(f'관리 권한 만료까지 약 {max(1, (remaining + 59) // 60)}분')
-            if st.button('🔒 관리자 모드 종료', key='_etf_admin_logout'):
-                _admin_sign_out()
-                st.rerun()
-            return
-        st.caption('🔎 일반 사용자 · 조회 전용')
-        if not _admin_configured():
-            st.caption('관리자 기능은 아직 설정되지 않았습니다. Streamlit Secrets에서 관리자 인증정보를 설정하세요.')
-            return
-        locked_until = float(st.session_state.get('_etf_admin_lock_until', 0))
-        if _admin_time.monotonic() < locked_until:
-            st.warning('관리자 인증 시도가 일시 제한되었습니다. 잠시 후 다시 시도하세요.')
-            return
-        with st.expander('🔐 관리자 인증', expanded=False):
-            with st.form('_etf_admin_login', clear_on_submit=True):
-                password = st.text_input('관리자 전용 비밀번호', type='password', key='_admin_entry')
-                submitted = st.form_submit_button('관리자 모드 진입', use_container_width=True)
-            if submitted:
-                if _admin_password_matches(password):
-                    st.session_state['_etf_admin_fingerprint'] = _admin_fingerprint()
-                    st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
-                    st.session_state['_etf_admin_failures'] = 0
-                    st.session_state.pop('_etf_admin_lock_until', None)
-                    st.rerun()
-                else:
-                    failed = int(st.session_state.get('_etf_admin_failures', 0)) + 1
-                    st.session_state['_etf_admin_failures'] = failed
-                    if failed >= 5:
-                        st.session_state['_etf_admin_lock_until'] = _admin_time.monotonic() + _ADMIN_LOCK_SECONDS
-                        st.session_state['_etf_admin_failures'] = 0
-                    st.error('인증 실패. 관리자 인증정보를 확인하세요.')
-
-
-_admin_access_panel()
-
-
 st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
-st.caption(('🛡️ 관리자 모드' if _is_admin() else '🔎 일반 사용자 모드 · 조회 전용') + ' · 보안패치 R3 / KRX 갱신 시 매회 재인증 · 로컬 설정 호환')
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
@@ -1247,8 +1151,7 @@ STATUS_FILE=DATA_DIR/'collection_status.json'
 DB_FILE=DATA_DIR/'etf_finder.db'
 
 def _secret_or_env(name):
-    # Use the same secure fallback locations for KRX/Supabase as for login.
-    return _etf_secret_value(name).strip()
+    return _etf_setting(name)
 
 def _import_pykrx():
     # KRX 로그인 정보는 .streamlit/secrets.toml 또는 Streamlit Cloud Secrets에서 자동 사용.
@@ -1257,7 +1160,7 @@ def _import_pykrx():
     if not krx_id or not krx_pw:
         raise RuntimeError(
             'KRX 로그인 정보가 없습니다. '
-            '로컬은 streamlit/secrets.toml 또는 .streamlit/secrets.toml, Streamlit Cloud는 App Settings → Secrets에 '
+            '로컬은 .streamlit/secrets.toml, Streamlit Cloud는 App Settings → Secrets에 '
             'KRX_ID와 KRX_PW를 저장해 주세요.'
         )
 
@@ -1334,7 +1237,7 @@ def _get_etf_pdf(stock, ticker, asof):
     raise RuntimeError("ETF PDF 조회 실패 · " + " | ".join(errors))
 
 def collect_krx_etf_snapshot(progress=None,pause=0.05):
-    _require_admin('KRX 전체 데이터 수집')
+    _etf_require_write()
     stock,collector_mode=_import_pykrx()
     asof,tickers=_find_latest_market_date(stock)
     collected_at=datetime.now().isoformat(timespec='seconds')
@@ -1473,23 +1376,16 @@ def load_snapshot():
 # LOCAL SQLITE DB
 # =========================================================
 
-def _db_connect(write=False):
-    if write:
-        _require_admin('SQLite DB 쓰기')
-        conn = sqlite3.connect(str(DB_FILE), timeout=30)
-        conn.execute('PRAGMA journal_mode=WAL')
-        conn.execute('PRAGMA synchronous=NORMAL')
-    else:
-        # Query-only connection prevents viewer read paths from changing rows.
-        conn = sqlite3.connect(DB_FILE.resolve().as_uri() + '?mode=ro',
-                               uri=True, timeout=30)
-        conn.execute('PRAGMA query_only=ON')
+def _db_connect():
+    conn=sqlite3.connect(str(DB_FILE),timeout=30)
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=NORMAL')
     return conn
 
 
 def save_local_db(master, holdings, status=None):
     """기존 DB를 건드리지 않고 임시 SQLite에서 구축·검증한 뒤 교체합니다."""
-    _require_admin('ETF DB 저장')
+    _etf_require_write()
     if master is None or master.empty or holdings is None or holdings.empty:
         raise RuntimeError('저장할 ETF 데이터가 없습니다. 기존 DB를 유지합니다.')
 
@@ -1607,7 +1503,6 @@ def _db_valid_snapshot(raw):
 
 
 def _db_sqlite_snapshot():
-    _require_admin('DB 백업 파일 읽기')
     path = DB_FILE
     if not path.exists():
         raise FileNotFoundError('저장된 로컬 DB가 없습니다.')
@@ -1623,9 +1518,8 @@ def _db_sqlite_snapshot():
         tmp.unlink(missing_ok=True)
 
 
-def _db_install_snapshot(raw, _startup=False):
-    if not _startup:
-        _require_admin('DB 복원')
+def _db_install_snapshot(raw):
+    _etf_require_write()
     _db_valid_snapshot(raw)
     with _db_tempfile.NamedTemporaryFile(suffix='.sqlite3', delete=False) as f:
         f.write(raw)
@@ -1640,7 +1534,7 @@ def _db_install_snapshot(raw, _startup=False):
 
 
 def _db_cloud_push(show_feedback=False):
-    _require_admin('Supabase 영구 저장')
+    _etf_require_write()
     cfg = _db_cloud_config()
     if cfg is None:
         return False
@@ -1679,11 +1573,17 @@ def _db_cloud_restore_on_boot():
         response = requests.get(cfg['read_url'], headers=cfg['headers'],
                                 timeout=(10, 180))
         if response.status_code == 404:
-            # No remote snapshot yet. A viewer's first page load must NEVER
-            # initiate remote writes. An administrator can explicitly back up.
+            # Storage is empty: seed it with a preexisting, valid DB if present.
+            if DB_FILE.exists():
+                try:
+                    _db_valid_snapshot(_db_sqlite_snapshot())
+                    if _db_cloud_push():
+                        return 'seeded'
+                except Exception:
+                    pass
             return 'remote_empty'
         response.raise_for_status()
-        _db_install_snapshot(response.content, _startup=True)
+        _db_install_snapshot(response.content)
         return 'restored'
     except Exception as exc:
         st.session_state['_db_cloud_error'] = '초기 DB 동기화 실패: ' + str(exc)
@@ -1709,7 +1609,6 @@ def _db_startup_restore():
 
 
 def _db_cloud_indicator():
-    _require_admin('Supabase DB 관리 화면')
     try:
         cfg = _db_cloud_config()
     except Exception as exc:
@@ -1721,27 +1620,29 @@ def _db_cloud_indicator():
         if st.session_state.get('_db_cloud_error'):
             st.warning('☁️ 최근 동기화 오류: ' + st.session_state['_db_cloud_error'])
         else:
-            st.caption('☁️ Supabase 연결정보 설정됨 · 실제 저장 성공 여부는 영구 저장 결과로 확인')
+            st.caption('☁️ 비공개 클라우드 DB 연결됨 · 서버 재시작 시 마지막 저장본 자동 복원')
         if st.session_state.get('_db_cloud_saved_at'):
             st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
-        if st.button('☁️ 현재 DB 영구 저장', key='etf' + '_cloud_save_btn'):
-            _db_cloud_push(show_feedback=True)
+        if _etf_admin_button('☁️ 현재 DB 영구 저장', 'cloud_save'):
+            with _etf_authorized_write('cloud_save'):
+                _db_cloud_push(show_feedback=True)
 
 
 def _db_manual_backup_controls():
     """Independent rescue route when remote Storage settings/network fail."""
-    _require_admin('DB 직접 백업 및 복원 화면')
     with st.expander('📦 DB 직접 백업 · 복원 (재배포 전에 백업 권장)', expanded=False):
         st.caption('이 기능은 Supabase 연결 없이 현재 서버의 SQLite를 .db 파일로 내려받습니다. '
                    '브라우저로 다운로드한 파일은 외부 클라우드에 자동 전송되지 않습니다.')
         if not db_available():
             st.warning('현재 서버에서 유효한 ETF DB를 찾지 못했습니다. 복원 파일이 있으면 아래에서 업로드하세요.')
-        if db_available() and st.button('📦 현재 DB 백업파일 준비', key='_etf_local_export_prep'):
-            try:
-                st.session_state['_etf_local_export'] = _db_sqlite_snapshot()
-                st.success('백업 파일 준비 완료. 아래 다운로드 버튼으로 PC에 보관하세요.')
-            except Exception as exc:
-                st.error(f'백업 준비 실패: {exc}')
+        if _etf_admin_button('📦 현재 DB 백업파일 준비', 'backup_export',
+                             disabled=not db_available()):
+            with _etf_authorized_write('backup_export'):
+                try:
+                    st.session_state['_etf_local_export'] = _db_sqlite_snapshot()
+                    st.success('백업 파일 준비 완료. 아래 다운로드 버튼으로 PC에 보관하세요.')
+                except Exception as exc:
+                    st.error(f'백업 준비 실패: {exc}')
         raw = st.session_state.get('_etf_local_export')
         if raw:
             st.download_button('⬇️ etf_finder.db 다운로드', data=raw,
@@ -1750,38 +1651,28 @@ def _db_manual_backup_controls():
             st.caption(f'준비된 백업 용량: {len(raw):,}바이트 · 다운로드 완료 여부를 확인하세요.')
         st.divider()
         st.caption('복원은 현재 서버 DB를 덮어씁니다. 기존 DB가 살아 있다면 먼저 다운로드해 두세요.')
-        # Fresh credentials required for each destructive restore attempt.
-        # Form clears password and confirmation on every submit.
-        with st.form('_etf_restore_authorize', clear_on_submit=True):
-            uploaded = st.file_uploader('보관 중인 SQLite DB 파일 선택',
-                                        type=['db', 'sqlite3'], key='_etf_restore_file')
-            approved = st.checkbox('현재 서버 DB 덮어쓰기를 이해하고 복원합니다', key='_etf_restore_confirm')
-            typed = st.text_input('복원 확인 문구 입력', key='_etf_restore_phrase', placeholder='DB복원')
-            reenter_password = st.text_input('관리자 비밀번호 재입력 (복원 실행용)',
-                                             type='password', key='_etf_restore_reauth')
-            execute_restore = st.form_submit_button('📂 DB 복원 실행')
-        if execute_restore:
-            try:
-                _require_admin('DB 복원 실행')
-                if uploaded is None or not approved or typed.strip() != 'DB복원':
-                    raise ValueError('백업 파일과 복원 확인 문구를 모두 입력하세요.')
-                if not _admin_password_matches(reenter_password):
-                    raise PermissionError('관리자 비밀번호 재확인에 실패했습니다.')
-                candidate = uploaded.getvalue()
-                _db_valid_snapshot(candidate)
-                if db_available():
-                    st.session_state['_etf_pre_restore_backup'] = _db_sqlite_snapshot()
-                _db_install_snapshot(candidate)
-                st.cache_data.clear()
-                st.success('현재 서버 DB 복원이 완료되었습니다.')
+        uploaded = st.file_uploader('보관 중인 SQLite DB 파일 선택',
+                                    type=['db', 'sqlite3'], key='_etf_restore_file')
+        approved = st.checkbox('현재 서버 DB 덮어쓰기를 이해하고 복원합니다', key='_etf_restore_confirm')
+        if _etf_admin_button('📂 DB 복원 실행', 'restore',
+                             disabled=uploaded is None or not approved):
+            with _etf_authorized_write('restore'):
                 try:
-                    if _db_cloud_config() and not _db_cloud_push():
-                        st.warning('로컬 복원은 성공했지만 클라우드 백업은 실패했습니다. 설정을 확인하세요.')
-                except Exception as ex:
-                    st.warning(f'로컬 복원 성공 / 클라우드 백업 설정 오류: {ex}')
-                st.rerun()
-            except Exception as exc:
-                st.error(f'복원 실패. DB 형식/무결성을 확인해 주세요: {exc}')
+                    candidate = uploaded.getvalue()
+                    _db_valid_snapshot(candidate)
+                    if db_available():
+                        st.session_state['_etf_pre_restore_backup'] = _db_sqlite_snapshot()
+                    _db_install_snapshot(candidate)
+                    st.cache_data.clear()
+                    st.success('현재 서버 DB 복원이 완료되었습니다.')
+                    try:
+                        if _db_cloud_config() and not _db_cloud_push():
+                            st.warning('로컬 복원은 성공했지만 클라우드 백업은 실패했습니다. 설정을 확인하세요.')
+                    except Exception as ex:
+                        st.warning(f'로컬 복원 성공 / 클라우드 백업 설정 오류: {ex}')
+                    st.rerun()
+                except Exception as exc:
+                    st.error(f'복원 실패. DB 형식/무결성을 확인해 주세요: {exc}')
         before = st.session_state.get('_etf_pre_restore_backup')
         if before:
             st.download_button('⬇️ 복원 이전 DB 다운로드 (긴급)', data=before,
@@ -1791,7 +1682,6 @@ def _db_manual_backup_controls():
 
 def migrate_existing_csv_to_db():
     '''기존 CSV가 있으면 KRX 재조회 없이 최초 1회 SQLite DB로 변환.'''
-    _require_admin('CSV DB 초기화')
     if DB_FILE.exists():
         return False
     if not (MASTER_FILE.exists() and HOLDINGS_FILE.exists()):
@@ -2029,7 +1919,7 @@ def _company_hint_scores(holdings):
 
 def build_theme_map():
     """현재 SQLite DB만 사용해 자동 테마 매핑 생성. KRX/인터넷 호출 없음."""
-    _require_admin('테마 매핑 DB 수정')
+    _etf_require_write()
     if not db_available():
         return {'mapped_etfs':0,'rows':0,'generated_at':''}
 
@@ -2137,7 +2027,7 @@ def build_theme_map():
     ]
     theme_df=pd.DataFrame(list(mapped.values()),columns=cols)
 
-    with _db_connect(write=True) as conn:
+    with _db_connect() as conn:
         if theme_df.empty:
             conn.execute('DROP TABLE IF EXISTS etf_theme_map')
             conn.execute(
@@ -2204,11 +2094,6 @@ def ensure_theme_map(force=False):
     current=_theme_source_signature()
     saved=_saved_theme_signature()
     if force or not saved or saved!=current:
-        # Viewers may search only previously saved mappings, never rebuild.
-        if not _is_admin():
-            info = theme_map_stats()
-            info.update({'rebuilt': False, 'outdated': True})
-            return info
         info=build_theme_map()
         info['rebuilt']=True
         return info
@@ -2839,8 +2724,9 @@ def render_etf_detail(etf_code,key_prefix='detail'):
 
 # 기존 CSV가 있다면 네트워크 접속 없이 SQLite로 1회 변환
 try:
-    _db_startup_state=_db_startup_restore()
-    _migrated=migrate_existing_csv_to_db() if _is_admin() else False
+    with _etf_bootstrap():
+        _db_startup_state=_db_startup_restore()
+        _migrated=migrate_existing_csv_to_db()
 except Exception:
     _migrated=False
 
@@ -2862,9 +2748,10 @@ _theme_info={'rebuilt':False,'mapped_etfs':0,'rows':0,'generated_at':''}
 _theme_error=''
 if db_available():
     try:
-        _theme_info=ensure_theme_map()
-        if _theme_info.get('rebuilt'):
-            _db_cloud_push()
+        with _etf_bootstrap():
+            _theme_info=ensure_theme_map()
+            if _theme_info.get('rebuilt'):
+                _db_cloud_push()
     except Exception as _e:
         _theme_error=str(_e)
 
@@ -2880,15 +2767,10 @@ _theme_stats=theme_map_stats()
 
 
 st.subheader('💾 로컬 ETF 데이터베이스')
-if _is_admin():
-    with st.expander('🛡️ 관리자 DB 도구 (수정·복원·영구 저장)', expanded=False):
-        _db_cloud_indicator()
-        _db_manual_backup_controls()
-else:
-    st.caption('🔒 조회 전용: DB 백업·갱신·복원·초기화·전체 다운로드는 관리자 인증이 필요합니다.')
+_db_cloud_indicator()
+_db_manual_backup_controls()
 
-if _is_admin():
-  with st.expander('🧪 배포환경 진단', expanded=False):
+with st.expander('🧪 배포환경 진단', expanded=False):
     import sys as _sys
     st.write('Python:', _sys.version.split()[0])
     st.write('실행 파일:', _sys.executable)
@@ -2918,8 +2800,6 @@ if db_available():
 
     if _theme_error:
         st.warning(f'자동 테마 매핑 오류: {_theme_error}')
-    elif _theme_info.get('outdated'):
-        st.caption('🧠 저장된 테마 분류를 조회 중입니다. 갱신은 관리자 인증이 필요합니다.')
     else:
         st.caption(
             f"🧠 자동 테마 매핑 · ETF {_theme_stats.get('mapped_etfs',0):,}개 · "
@@ -2929,81 +2809,63 @@ if db_available():
         if _theme_info.get('rebuilt'):
             st.success('ETF명·추종지수·구성종목을 기준으로 테마 매핑을 자동 생성했습니다.')
 
-        if _is_admin() and st.button('🧠 테마 매핑 다시 생성',key='rebuild_theme_map'):
-            _require_admin('테마 매핑 다시 생성')
-            with st.spinner('로컬 DB에서 테마를 다시 분류하는 중...'):
-                _new_theme=ensure_theme_map(force=True)
-                _db_cloud_push()
-                st.cache_data.clear()
-            st.success(
-                f"테마 매핑 완료 · ETF {_new_theme.get('mapped_etfs',0):,}개 · "
-                f"매핑 {_new_theme.get('rows',0):,}건"
-            )
-            st.rerun()
+        if _etf_admin_button('🧠 테마 매핑 다시 생성', 'theme_rebuild'):
+            with _etf_authorized_write('theme_rebuild'):
+                with st.spinner('로컬 DB에서 테마를 다시 분류하는 중...'):
+                    _new_theme=ensure_theme_map(force=True)
+                    _db_cloud_push()
+                    st.cache_data.clear()
+                st.success(
+                    f"테마 매핑 완료 · ETF {_new_theme.get('mapped_etfs',0):,}개 · "
+                    f"매핑 {_new_theme.get('rows',0):,}건"
+                )
+                st.rerun()
 else:
     st.info('아직 로컬 DB가 없습니다. 아래 버튼을 한 번 실행해 최초 DB를 생성하세요.')
 
-# Unlike the general admin panel, KRX refresh requires a *fresh* password
-# for every run. The request button is visible to viewers, but no mutation
-# or network collection can occur before a valid challenge response.
-_krx_ready = bool(_secret_or_env('KRX_ID') and _secret_or_env('KRX_PW'))
-if _is_admin() and not _krx_ready:
-    st.warning('KRX 업데이트용 Secrets가 없습니다. KRX_ID와 KRX_PW를 확인해 주세요.')
+_krx_ready=bool(_secret_or_env('KRX_ID') and _secret_or_env('KRX_PW'))
+if _krx_ready:
+    st.caption('🔐 KRX 로그인 정보: Secrets 자동 사용 · pykrx는 requirements.txt에서 배포 시 설치')
+else:
+    st.warning('KRX 업데이트용 Secrets가 없습니다. .streamlit/secrets.toml에 KRX_ID와 KRX_PW를 저장해 주세요.')
 
-with st.expander('🔄 KRX에서 로컬 DB 새로고침 (관리자 인증 필요)', expanded=False):
-    st.caption('전체 ETF DB를 새로 수집하고 현재 DB를 교체하는 작업입니다. '
-               '관리자 모드로 로그인한 상태여도 매번 관리자 비밀번호를 다시 입력해야 합니다.')
-    if not _admin_configured():
-        st.error('관리자 비밀번호가 아직 설정되지 않았습니다. Streamlit Secrets에 ADMIN_PASSWORD를 설정하세요.')
-    else:
-        if st.button('🔄 DB 새로고침 요청', key='_etf_krx_refresh_request', use_container_width=True):
-            st.session_state['_etf_krx_refresh_pending'] = True
-        if st.session_state.get('_etf_krx_refresh_pending', False):
-            st.warning('🔐 관리자 확인 전에는 데이터 수집·DB 변경을 실행하지 않습니다.')
-            with st.form('_etf_krx_refresh_confirm', clear_on_submit=True):
-                _krx_password = st.text_input('관리자 비밀번호 재입력', type='password',
-                                              key='_etf_krx_refresh_secret')
-                _krx_ack = st.checkbox('현재 DB를 별도로 백업했으며 갱신 작업을 진행합니다',
-                                       key='_etf_krx_refresh_ack')
-                _krx_submit = st.form_submit_button('🔐 인증 후 KRX DB 갱신 실행',
-                                                    type='primary', use_container_width=True)
-            if st.button('취소', key='_etf_krx_refresh_cancel'):
-                st.session_state['_etf_krx_refresh_pending'] = False
+with st.expander('🔄 KRX에서 로컬 DB 새로고침',expanded=not db_available()):
+    st.caption(
+        '이 버튼을 누를 때만 KRX 전체 데이터를 조회합니다. '
+        '저장 완료 후 종목검색·테크트리·ETF 조회는 모두 로컬 DB에서 실행됩니다.'
+    )
+
+    if _etf_admin_button('KRX 전체 데이터로 로컬 DB 업데이트', 'krx_update',
+                         button_type='primary', use_container_width=True):
+        with _etf_authorized_write('krx_update'):
+            if not _krx_ready:
+                st.error('secrets.toml의 KRX_ID / KRX_PW를 먼저 확인해 주세요.')
+                st.stop()
+
+            bar=st.progress(0,text='KRX ETF 데이터를 로컬 DB용으로 수집하는 중...')
+
+            def _progress(i,total,ticker,failed):
+                bar.progress(
+                    min(i/max(total,1),1.0),
+                    text=f'{i:,}/{total:,} · {ticker} · 실패 {failed:,}건'
+                )
+
+            try:
+                _m,_h,_status=collect_krx_etf_snapshot(progress=_progress)
+                save_local_db(_m,_h,status=_status)
+                _cloud_ok=_db_cloud_push()
+                st.cache_data.clear()
+                if _db_cloud_config() and not _cloud_ok:
+                    st.warning('클라우드 저장에 실패했습니다. 지금 서버에서는 검색할 수 있지만 재부팅 전에 백업 설정을 확인해 주세요.')
+
+                bar.progress(1.0,text='로컬 DB 저장 완료')
+                st.success(
+                    f"기준일 {_status['as_of']} · ETF {_status['success_etfs']:,}개 · "
+                    f"구성종목 {_status['holding_rows']:,}건을 etf_finder.db에 저장했습니다."
+                )
                 st.rerun()
-            if _krx_submit:
-                try:
-                    _authorize_krx_refresh(_krx_password, _krx_ack)
-                    if not _krx_ready:
-                        raise ValueError('Secrets의 KRX_ID / KRX_PW를 먼저 확인해 주세요.')
-                except (PermissionError, ValueError) as _auth_exc:
-                    st.error(str(_auth_exc))
-                else:
-                    # Challenge consumed. A rerun/replay must request a new password.
-                    st.session_state['_etf_krx_refresh_pending'] = False
-                    _require_admin('KRX 전체 DB 갱신')
-                    bar = st.progress(0, text='KRX ETF 데이터를 로컬 DB용으로 수집하는 중...')
-
-                    def _progress(i,total,ticker,failed):
-                        # Extend role during active processing, not between
-                        # independent refreshes. The next run requires reauth.
-                        _require_admin('KRX 데이터 수집 진행')
-                        st.session_state['_etf_admin_until'] = _admin_time.monotonic() + _ADMIN_TTL_SECONDS
-                        bar.progress(min(i/max(total,1),1.0),
-                                     text=f'{i:,}/{total:,} · {ticker} · 실패 {failed:,}건')
-
-                    try:
-                        _m,_h,_new_status = collect_krx_etf_snapshot(progress=_progress)
-                        save_local_db(_m,_h,status=_new_status)
-                        _cloud_ok = _db_cloud_push()
-                        st.cache_data.clear()
-                        if _db_cloud_config() and not _cloud_ok:
-                            st.warning('클라우드 저장에 실패했습니다. 재부팅 전에 DB 백업을 확인해 주세요.')
-                        bar.progress(1.0, text='로컬 DB 저장 완료')
-                        st.success(f"기준일 {_new_status['as_of']} · ETF {_new_status['success_etfs']:,}개 · "
-                                   f"구성종목 {_new_status['holding_rows']:,}건을 etf_finder.db에 저장했습니다.")
-                        st.rerun()
-                    except Exception as _refresh_exc:
-                        st.error(f'DB 새로고침 실패: {_refresh_exc}')
+            except Exception as e:
+                st.error(f'업데이트 실패: {e}')
 
 st.divider()
 
