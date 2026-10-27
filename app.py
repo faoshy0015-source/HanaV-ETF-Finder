@@ -87,7 +87,7 @@ def _etf_admin_button(label, action, *, disabled=False, button_type='secondary',
         st.session_state[flag] = True
     if not st.session_state.get(flag, False):
         return False
-    st.caption('🔒 이 작업은 관리자 비밀번호 확인 후 1회만 실행됩니다.')
+    st.info('🔒 관리자 인증 대기: 아래 비밀번호 입력 후 [인증 후 실행]을 눌러야 작업이 시작됩니다.')
     with st.form('_etf_admin_form_' + action, clear_on_submit=True):
         entered = st.text_input('관리자 비밀번호', type='password',
                                 key='_etf_admin_password_' + action)
@@ -106,7 +106,7 @@ def _etf_admin_button(label, action, *, disabled=False, button_type='secondary',
     st.session_state[flag] = False
     expected = _etf_setting('ADMIN_PASSWORD')
     if not expected:
-        st.error('ADMIN_PASSWORD 미설정: Streamlit Secrets에서 먼저 설정해야 합니다.')
+        st.error('관리자 비밀번호 미설정: Streamlit Secrets에 ADMIN_PASSWORD를 추가한 뒤 다시 시도하세요. 저장 작업은 실행하지 않았습니다.')
         return False
     if len(expected) < 12 or hmac.compare_digest(expected, _etf_app_password()):
         st.error('관리자 비밀번호는 접속 비밀번호와 달라야 하며 12자 이상이어야 합니다.')
@@ -195,6 +195,10 @@ with _logout_col:
 
 
 st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
+
+# Version marker: old deployments without this label MUST NOT be treated as protected.
+st.caption('🔐 DB 작업 매회 재인증 적용 · SECURITY-FIX-20261027-V5 · 일반 검색은 제한 없음')
+
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
@@ -1573,14 +1577,7 @@ def _db_cloud_restore_on_boot():
         response = requests.get(cfg['read_url'], headers=cfg['headers'],
                                 timeout=(10, 180))
         if response.status_code == 404:
-            # Storage is empty: seed it with a preexisting, valid DB if present.
-            if DB_FILE.exists():
-                try:
-                    _db_valid_snapshot(_db_sqlite_snapshot())
-                    if _db_cloud_push():
-                        return 'seeded'
-                except Exception:
-                    pass
+            # No implicit writes to remote Storage. Only approved user actions may back up.
             return 'remote_empty'
         response.raise_for_status()
         _db_install_snapshot(response.content)
@@ -1623,6 +1620,7 @@ def _db_cloud_indicator():
             st.caption('☁️ 비공개 클라우드 DB 연결됨 · 서버 재시작 시 마지막 저장본 자동 복원')
         if st.session_state.get('_db_cloud_saved_at'):
             st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
+        st.caption('🛡️ 저장 버튼은 실행 요청만 합니다. 비밀번호 인증 전에는 서버에 DB가 업로드되지 않습니다. · V5')
         if _etf_admin_button('☁️ 현재 DB 영구 저장', 'cloud_save'):
             with _etf_authorized_write('cloud_save'):
                 _db_cloud_push(show_feedback=True)
@@ -1692,7 +1690,7 @@ def migrate_existing_csv_to_db():
         return False
 
     save_local_db(master,holdings,status=status)
-    _db_cloud_push()
+    # Migration from preexisting local CSV is local-only; remote upload needs admin approval.
     return True
 
 
@@ -2748,10 +2746,9 @@ _theme_info={'rebuilt':False,'mapped_etfs':0,'rows':0,'generated_at':''}
 _theme_error=''
 if db_available():
     try:
-        with _etf_bootstrap():
-            _theme_info=ensure_theme_map()
-            if _theme_info.get('rebuilt'):
-                _db_cloud_push()
+        # Read-only on ordinary page loads. Manual theme rebuild requires ADMIN_PASSWORD.
+        _theme_info=theme_map_stats()
+        _theme_info['rebuilt']=False
     except Exception as _e:
         _theme_error=str(_e)
 
