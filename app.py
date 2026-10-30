@@ -42,6 +42,13 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 [data-baseweb="tab-highlight"]{background:#008878}
 [data-testid="stDataFrame"]{border:1px solid #CFDFD9;border-radius:7px;overflow:hidden}
 hr{border-color:#D4E3DC}
+.hv-brandbar{display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;margin:8px 0 14px;padding:20px 24px;border:1px solid #c8e3d6;border-left:5px solid #008878;border-radius:14px;background:linear-gradient(105deg,#e1f4ed 0%,#f8fcfa 62%,#eaf7f2 100%)}
+.hv-brandname{font-size:clamp(25px,3vw,35px);font-weight:850;line-height:1.2;color:#164b42;letter-spacing:-.035em}
+.hv-brandsub{font-size:12px;color:#52766c;margin-top:5px}
+.hv-signature{font-size:11px;letter-spacing:.04em;color:#16816d;font-weight:750;background:#ffffffc9;border:1px solid #c7e5da;padding:9px 13px;border-radius:20px}
+.hv-hero-signature{margin-top:10px;font-size:11px;letter-spacing:.06em;color:#e1fffa;font-weight:700}
+.hv-footer-signature{text-align:center;margin:25px 0 10px;padding:14px 0;border-top:1px solid #d0e5dc;color:#54786d;font-size:12px}
+@media(max-width:640px){.hv-brandbar{padding:15px;gap:10px}.hv-brandname{font-size:25px}.hv-signature{font-size:10px;padding:7px 10px}}
 </style>''', unsafe_allow_html=True)
 
 # 접속 비밀번호: Cloud Secrets 또는 로컬 설정. 별도 모드/앱을 만들지 않습니다.
@@ -194,7 +201,7 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진 </p></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진</p><div class="hv-hero-signature">Designed &amp; Built by K.H. Ahn</div></div>''', unsafe_allow_html=True)
 
 # Version marker: old deployments without this label MUST NOT be treated as protected.
 st.caption('🔐 DB 작업 매회 재인증 적용 · SECURITY-FIX-20261027-V5 · 일반 검색은 제한 없음')
@@ -2912,7 +2919,13 @@ _theme_stats=theme_map_stats()
 # =========================================================
 
 
-st.subheader('💾 로컬 ETF 데이터베이스')
+st.markdown('''
+<div class="hv-brandbar">
+<div><div class="hv-brandname">◈ HanaV ETF Finder</div>
+<div class="hv-brandsub">ETF 탐색 · 구성종목 분석 · 데이터 현황 및 관리</div></div>
+<div class="hv-signature">Designed &amp; Built by K.H. Ahn</div>
+</div>
+''', unsafe_allow_html=True)
 _db_cloud_indicator()
 _db_manual_backup_controls()
 
@@ -3432,3 +3445,5 @@ with t3:
         except Exception as _e:
             st.warning(f'테마 매핑 미리보기를 불러오지 못했습니다: {_e}')
 
+
+st.markdown('<div class="hv-footer-signature">HanaV ETF Finder · <strong>Designed &amp; Built by K.H. Ahn</strong></div>', unsafe_allow_html=True)
