@@ -2251,7 +2251,11 @@ def _kr_etf_price_frame(records,start_date):
     out=pd.DataFrame(records,columns=['날짜','종가'])
     if out.empty:
         return out
-    out['날짜']=pd.to_datetime(out['날짜'],errors='coerce')
+    dates=pd.to_datetime(out['날짜'],errors='coerce')
+    # Yahoo(.KS) uses timezone-aware dates; preserve local calendar dates.
+    if getattr(dates.dt,'tz',None) is not None:
+        dates=dates.dt.tz_localize(None)
+    out['날짜']=dates
     out['종가']=pd.to_numeric(out['종가'],errors='coerce')
     out=out.dropna(subset=['날짜','종가'])
     out=out[(out['종가']>0)&(out['날짜']>=pd.Timestamp(start_date.date()))]
