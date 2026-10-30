@@ -2678,6 +2678,7 @@ def render_etf_detail(etf_code,key_prefix='detail'):
 
     with chart_col:
         st.markdown('#### 가격 차트')
+        st.caption('차트 엔진: 네이버 · Yahoo · KRX 자동 전환 | 2026-10-30-FALLBACK-V2')
         period=st.radio(
             '조회기간',
             ['1개월','3개월','6개월','1년'],
