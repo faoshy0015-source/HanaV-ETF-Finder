@@ -722,8 +722,7 @@ def get_us_etf_price_history(ticker,period_label):
     return out.rename(columns={date_col:'날짜','Close':'종가'})[['날짜','종가']]
 
 
-@st.cache_data(ttl=21600,show_spinner=False)
-def get_us_etf_holdings(ticker):
+def _get_us_etf_holdings_yahoo(ticker):
     yf=_import_yfinance()
     t=yf.Ticker(str(ticker).upper())
     try:
@@ -763,6 +762,86 @@ def get_us_etf_holdings(ticker):
         out['비중(%)']=out['비중(%)']*100.0
     out=out.sort_values('비중(%)',ascending=False).reset_index(drop=True)
     return {'rows':out.to_dict('records'),'error':''}
+
+
+
+def _parse_public_us_holdings(html):
+    """외부 ETF 공개자료 표에서 심볼, 구성종목명, 비중을 추출한다."""
+    parser=_ETFHTMLTableParser()
+    parser.feed(html or '')
+    all_rows=[]
+    for table in parser.tables:
+        for header_at,head in enumerate(table[:5]):
+            norm=[re.sub(r'[^a-z0-9%]', '',str(x).lower()) for x in head]
+            def idx(names):
+                return next((i for i,x in enumerate(norm) if x in names),None)
+            sym=idx({'symbol','ticker'})
+            name=idx({'fundname','name','holdingname'})
+            weight=idx({'weight','weight%','weightweight','%ofassets','percentofassets'})
+            if any(x is None for x in (sym,name,weight)):
+                continue
+            rows=[]
+            for record in table[header_at+1:]:
+                if len(record)<=max(sym,name,weight):
+                    continue
+                code=str(record[sym]).upper().strip()
+                title=' '.join(str(record[name]).split())
+                n=re.search(r'\d+(?:\.\d+)?',str(record[weight]).replace(',',''))
+                if not n or not re.fullmatch(r'[A-Z0-9.\-]{1,12}',code):
+                    continue
+                pct=float(n.group())
+                if title and 0 < pct <=100:
+                    rows.append({'종목코드':code,'구성종목':title,'비중(%)':pct})
+            if len(rows)>=3:
+                all_rows.append(rows)
+    if not all_rows:
+        return []
+    df=pd.DataFrame(max(all_rows,key=len))
+    df=df.drop_duplicates(subset=['종목코드']).sort_values('비중(%)',ascending=False)
+    return df.to_dict('records')
+
+
+def _get_public_us_holdings(ticker):
+    symbol=str(ticker).strip().upper()
+    sources=[]
+    if symbol=='SCHD':
+        sources.append(('Schwab 공식 운용사',
+                        'https://www.schwabassetmanagement.com/allholdings/schd'))
+    sources.append(('StockAnalysis / Finnhub 공개자료',
+                    f'https://stockanalysis.com/etf/{symbol.lower()}/holdings/'))
+    errors=[]
+    for name,url in sources:
+        try:
+            response=requests.get(url,timeout=10,headers={
+                'User-Agent':'Mozilla/5.0',
+                'Accept':'text/html,application/xhtml+xml',
+                'Accept-Language':'en-US,en;q=0.9'})
+            if response.status_code!=200:
+                errors.append(f'{name}: HTTP {response.status_code}')
+                continue
+            rows=_parse_public_us_holdings(response.text)
+            if rows:
+                return {'rows':rows,'error':'','source':name,'source_url':url}
+            errors.append(f'{name}: 구성종목 표가 없음')
+        except Exception as e:
+            errors.append(f'{name}: {type(e).__name__}')
+    return {'rows':[],'error':' / '.join(errors)}
+
+
+@st.cache_data(ttl=1800,show_spinner=False)
+def get_us_etf_holdings(ticker):
+    yahoo=_get_us_etf_holdings_yahoo(ticker)
+    if yahoo.get('rows'):
+        yahoo['source']='Yahoo Finance / yfinance'
+        return yahoo
+    alternative=_get_public_us_holdings(ticker)
+    if alternative.get('rows'):
+        return alternative
+    error='Yahoo: '+str(yahoo.get('error') or '구성종목 없음')
+    extra=alternative.get('error')
+    if extra:
+        error+=' / 다른 공개출처: '+extra
+    return {'rows':[],'error':error}
 
 
 def render_us_etf_detail(ticker,key_prefix='us_detail'):
