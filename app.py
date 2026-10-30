@@ -2285,7 +2285,7 @@ def get_etf_price_history(etf_code,period_label):
         )
         response.raise_for_status()
         rows=[]
-        for data in re.findall(r'<item\\b[^>]*\\bdata=["\\\']([^"\\\']+)["\\\']',response.text):
+        for data in re.findall(r'<item[^>]+data="([^"]+)"',response.text):
             parts=data.split('|')
             if len(parts)>=5:
                 try:
