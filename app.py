@@ -777,7 +777,7 @@ def _parse_public_us_holdings(html):
                 return next((i for i,x in enumerate(norm) if x in names),None)
             sym=idx({'symbol','ticker'})
             name=idx({'fundname','name','holdingname'})
-            weight=idx({'weight','weight%','weightweight','%ofassets','percentofassets'})
+            weight=idx({'weight','weight%','weightweight','weight%weight','%ofassets','percentofassets'})
             if any(x is None for x in (sym,name,weight)):
                 continue
             rows=[]
@@ -900,9 +900,14 @@ def render_us_etf_detail(ticker,key_prefix='us_detail'):
                 h=get_us_etf_holdings(code)
             rows=h.get('rows') or []
             if not rows:
-                st.info('상위 구성종목을 불러오지 못했습니다.')
+                st.warning('Yahoo Finance 접근 제한 또는 대체 공개자료 조회 실패로 구성종목을 표시하지 못했습니다.')
                 if h.get('error'):
                     st.caption(f"조회 오류: {h.get('error')}")
+                if code=='SCHD':
+                    st.link_button('Schwab 공식 구성종목 직접 확인',
+                                   'https://www.schwabassetmanagement.com/allholdings/schd')
+                else:
+                    st.caption('공개 데이터 제공처의 응답이 복구되면 다시 조회할 수 있습니다.')
             else:
                 hd=pd.DataFrame(rows)
                 top=hd.head(10).copy()
@@ -920,7 +925,9 @@ def render_us_etf_detail(ticker,key_prefix='us_detail'):
                     hd,use_container_width=True,hide_index=True,height=420,
                     column_config={'비중(%)':st.column_config.NumberColumn(format='%.2f%%')}
                 )
-                st.caption('Yahoo Finance/yfinance 상위 구성종목 · 데이터 제공 범위 내 표시')
+                st.caption(f"구성종목 출처: {h.get('source','Yahoo Finance / yfinance')} · 공시 기준일은 원문에서 확인하세요.")
+                if h.get('source_url'):
+                    st.link_button('구성종목 데이터 원문 확인',h['source_url'])
         except Exception as e:
             st.warning(f'미국 ETF 구성종목 조회 실패: {e}')
 
