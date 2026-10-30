@@ -2246,44 +2246,99 @@ def get_etf_master_local(etf_code,_db_token):
     return df.iloc[0].to_dict() if not df.empty else {}
 
 
-@st.cache_data(ttl=1800,show_spinner=False)
+def _kr_etf_price_frame(records,start_date):
+    """가격 공급처가 달라도 차트가 읽는 날짜/종가 형식으로 표준화."""
+    out=pd.DataFrame(records,columns=['날짜','종가'])
+    if out.empty:
+        return out
+    out['날짜']=pd.to_datetime(out['날짜'],errors='coerce')
+    out['종가']=pd.to_numeric(out['종가'],errors='coerce')
+    out=out.dropna(subset=['날짜','종가'])
+    out=out[(out['종가']>0)&(out['날짜']>=pd.Timestamp(start_date.date()))]
+    return out.drop_duplicates('날짜',keep='last').sort_values('날짜').reset_index(drop=True)
+
+
+@st.cache_data(ttl=900,show_spinner=False)
 def get_etf_price_history(etf_code,period_label):
+    """한국 ETF 일별 종가: 네이버 → Yahoo → 기존 KRX(pykrx) 순서로 조회.
+
+    가격 데이터는 무료 공개 조회이며, 로컬 ETF 구성종목 DB나 저장 상태를 건드리지 않는다.
+    """
     days_map={'1개월':45,'3개월':120,'6개월':230,'1년':420}
     days=days_map.get(period_label,230)
-
     end=datetime.now()
     start=end-timedelta(days=days)
+    code=str(etf_code).zfill(6)
+    errors=[]
 
-    stock,_collector_mode=_import_pykrx()
-    df=stock.get_etf_ohlcv_by_date(
-        start.strftime('%Y%m%d'),
-        end.strftime('%Y%m%d'),
-        str(etf_code).zfill(6)
-    )
+    # 1) 네이버 증권 일봉 XML: KRX 로그인/pykrx 패키지 초기화가 필요하지 않음.
+    try:
+        response=requests.get(
+            'https://fchart.stock.naver.com/sise.nhn',
+            params={'symbol':code,'timeframe':'day',
+                    'count':min(650,max(60,int(days*0.82)+25)),
+                    'requestType':'0'},
+            headers={'User-Agent':'Mozilla/5.0',
+                     'Referer':'https://finance.naver.com/',
+                     'Accept':'application/xml,text/xml,*/*'},
+            timeout=9,
+        )
+        response.raise_for_status()
+        rows=[]
+        for data in re.findall(r'<item\\b[^>]*\\bdata=["\\\']([^"\\\']+)["\\\']',response.text):
+            parts=data.split('|')
+            if len(parts)>=5:
+                try:
+                    rows.append((parts[0],int(parts[4].replace(',',''))))
+                except (ValueError,IndexError):
+                    continue
+        prices=_kr_etf_price_frame(rows,start)
+        if not prices.empty:
+            return {'data':prices,'source':'네이버 증권 일별시세','error':''}
+        errors.append('네이버 증권: 가격 데이터 없음')
+    except Exception as exc:
+        errors.append(f'네이버 증권: {type(exc).__name__}: {str(exc)[:140]}')
 
-    if df is None or df.empty:
-        return pd.DataFrame()
+    # 2) Yahoo Finance. 국내 KRX ETF는 통상 .KS (예: 469150.KS)
+    try:
+        yf=_import_yfinance()
+        hist=yf.Ticker(f'{code}.KS').history(
+            start=start.strftime('%Y-%m-%d'),
+            end=(end+timedelta(days=1)).strftime('%Y-%m-%d'),
+            auto_adjust=False,
+        )
+        if hist is not None and not hist.empty and 'Close' in hist.columns:
+            frame=hist.reset_index()
+            dcol='Date' if 'Date' in frame.columns else frame.columns[0]
+            prices=_kr_etf_price_frame(
+                list(zip(frame[dcol],frame['Close'])),start
+            )
+            if not prices.empty:
+                return {'data':prices,'source':'Yahoo Finance (.KS)','error':''}
+        errors.append('Yahoo Finance: 가격 데이터 없음')
+    except Exception as exc:
+        errors.append(f'Yahoo Finance: {type(exc).__name__}: {str(exc)[:140]}')
 
-    out=df.reset_index().copy()
+    # 3) 기존 KRX(pykrx) 조회는 최종 보조 경로로만 사용.
+    try:
+        stock,_collector_mode=_import_pykrx()
+        df=stock.get_etf_ohlcv_by_date(
+            start.strftime('%Y%m%d'),end.strftime('%Y%m%d'),code
+        )
+        if df is not None and not df.empty and '종가' in df.columns:
+            frame=df.reset_index()
+            dcol='날짜' if '날짜' in frame.columns else frame.columns[0]
+            prices=_kr_etf_price_frame(
+                list(zip(frame[dcol],frame['종가'])),start
+            )
+            if not prices.empty:
+                return {'data':prices,'source':'KRX (pykrx)','error':''}
+        errors.append('KRX (pykrx): 가격 데이터 없음')
+    except Exception as exc:
+        errors.append(f'KRX (pykrx): {type(exc).__name__}: {str(exc)[:140]}')
 
-    date_col=None
-    for c in ['날짜','Date','date','index']:
-        if c in out.columns:
-            date_col=c
-            break
-    if date_col is None:
-        date_col=out.columns[0]
-
-    out[date_col]=pd.to_datetime(out[date_col],errors='coerce')
-    out=out.dropna(subset=[date_col])
-
-    if '종가' not in out.columns:
-        return pd.DataFrame()
-
-    out['종가']=pd.to_numeric(out['종가'],errors='coerce')
-    out=out.dropna(subset=['종가'])
-    out=out.rename(columns={date_col:'날짜'})
-    return out
+    return {'data':pd.DataFrame(columns=['날짜','종가']),
+            'source':'','error':' / '.join(errors)}
 
 
 def _set_selected_etf(etf_code,etf_name='',source=''):
@@ -2629,10 +2684,13 @@ def render_etf_detail(etf_code,key_prefix='detail'):
 
         try:
             with st.spinner('선택 ETF 가격차트를 불러오는 중...'):
-                price_df=get_etf_price_history(code,period)
+                price_result=get_etf_price_history(code,period)
+                price_df=price_result['data']
 
             if price_df.empty:
-                st.info('해당 기간의 가격 데이터를 불러오지 못했습니다.')
+                st.warning('가격 데이터 제공처 3곳에서 모두 조회에 실패했습니다. 잠시 후 다시 시도해 주세요.')
+                if price_result.get('error'):
+                    st.caption(f"가격 조회 진단: {price_result['error']}")
             else:
                 p=price_df[['날짜','종가']].dropna().sort_values('날짜').copy()
                 last=float(p['종가'].iloc[-1])
@@ -2656,7 +2714,7 @@ def render_etf_detail(etf_code,key_prefix='detail'):
 
                 st.caption(
                     f"{p['날짜'].min():%Y-%m-%d} ~ {p['날짜'].max():%Y-%m-%d} · "
-                    "차트만 선택 시 KRX에서 조회합니다."
+                    f"가격 출처: {price_result['source']} · 구성종목은 기존 로컬 DB에서 별도 조회"
                 )
 
         except Exception as e:
