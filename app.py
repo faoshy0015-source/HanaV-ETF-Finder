@@ -201,10 +201,10 @@ with _logout_col:
               use_container_width=True, on_click=_etf_logout)
 
 
-st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진</p><div class="hv-hero-signature">Designed &amp; Built by K.H. Ahn</div></div>''', unsafe_allow_html=True)
+st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진</p><p style="font-size:14px;opacity:.9;margin-top:8px;">ETF 탐색 · 구성종목 분석 · 데이터 현황 및 관리</p><div class="hv-hero-signature">Designed &amp; Built by K.H. Ahn</div></div>''', unsafe_allow_html=True)
 
 # Version marker: old deployments without this label MUST NOT be treated as protected.
-st.caption('🔐 DB 작업 매회 재인증 적용 · SECURITY-FIX-20261027-V5 · 일반 검색은 제한 없음')
+st.caption('🔐 DB 변경 작업은 관리자 인증 후 실행 · 일반 검색은 제한 없음')
 
 
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
@@ -1713,7 +1713,7 @@ def _db_cloud_indicator():
             st.caption('☁️ 비공개 클라우드 DB 연결됨 · 서버 재시작 시 마지막 저장본 자동 복원')
         if st.session_state.get('_db_cloud_saved_at'):
             st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
-        st.caption('🛡️ 저장 버튼은 실행 요청만 합니다. 비밀번호 인증 전에는 서버에 DB가 업로드되지 않습니다. · V5')
+        st.caption('🛡️ 저장 버튼은 실행 요청만 합니다. 비밀번호 인증 전에는 서버에 DB가 업로드되지 않습니다.')
         if _etf_admin_button('☁️ 현재 DB 영구 저장', 'cloud_save'):
             with _etf_authorized_write('cloud_save'):
                 _db_cloud_push(show_feedback=True)
@@ -2919,13 +2919,6 @@ _theme_stats=theme_map_stats()
 # =========================================================
 
 
-st.markdown('''
-<div class="hv-brandbar">
-<div><div class="hv-brandname">◈ HanaV ETF Finder</div>
-<div class="hv-brandsub">ETF 탐색 · 구성종목 분석 · 데이터 현황 및 관리</div></div>
-<div class="hv-signature">Designed &amp; Built by K.H. Ahn</div>
-</div>
-''', unsafe_allow_html=True)
 _db_cloud_indicator()
 _db_manual_backup_controls()
 
