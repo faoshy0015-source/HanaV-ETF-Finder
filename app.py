@@ -211,6 +211,10 @@ st.caption('🔐 DB 변경 작업은 관리자 인증 후 실행 · 일반 검�
 TREE = {
     '국내자산': {
         '주식': {
+            '국내 대표지수':[
+                '전체','코스피 계열','코스피200','코스피100','코스피50',
+                '코스닥 계열','코스닥150','KRX300'
+            ],
             '반도체':[
                 '전체','메모리','HBM','AI 반도체','파운드리','팹리스',
                 '반도체 장비','반도체 소재·부품','후공정·패키징','전력반도체'
@@ -2193,8 +2197,76 @@ def ensure_theme_map(force=False):
     return info
 
 
+def search_kr_index_db(index_choice):
+    """국내 대표지수를 ETF명/추종지수에서 직접 검색 (DB 매핑 재구축 불필요)."""
+    if not db_available():
+        return pd.DataFrame()
+    allowed=TREE['국내자산']['주식']['국내 대표지수']
+    if index_choice not in allowed:
+        return pd.DataFrame()
+    try:
+        with _db_connect() as conn:
+            master_df=pd.read_sql_query(
+                'SELECT etf_name,etf_code,issuer,aum,turnover,fee,index_name,as_of '
+                'FROM etf_master',conn
+            )
+    except Exception:
+        return pd.DataFrame()
+
+    results=[]
+    for _,row in master_df.iterrows():
+        name=str(row.get('etf_name') or '')
+        index=str(row.get('index_name') or '')
+        if _infer_region_asset(name,index)!=('국내자산','주식'):
+            continue
+        token=_norm_theme_text(name+' '+index)
+        groups=set()
+        if '코스피' in token or 'kospi' in token:
+            groups.add('코스피 계열')
+        if '코스닥' in token or 'kosdaq' in token:
+            groups.add('코스닥 계열')
+        if 'krx300' in token or '케이알엑스300' in token:
+            groups.add('KRX300')
+        for label,keys in (
+            ('코스피200',('코스피200','kospi200')),
+            ('코스피100',('코스피100','kospi100')),
+            ('코스피50',('코스피50','kospi50')),
+            ('코스닥150',('코스닥150','kosdaq150'))
+        ):
+            if any(key in token for key in keys):
+                groups.add(label)
+                groups.add('코스닥 계열' if label.startswith('코스닥') else '코스피 계열')
+
+        # KODEX 200처럼 지수명 없이 숫자만 표기된 대표 상품에 한하여 보완.
+        if not groups and not index.strip() and re.fullmatch(
+            r'(?:kodex|tiger|rise|ace|sol|plus|hanaro|arirang|kbstar|kiwoom)200(?:tr)?',
+            _norm_theme_text(name)
+        ):
+            groups.update(('코스피 계열','코스피200'))
+
+        if not groups or (index_choice!='전체' and index_choice not in groups):
+            continue
+        item=row.to_dict()
+        item['etf_code']=str(item.get('etf_code') or '').zfill(6)
+        idx_norm=_norm_theme_text(index)
+        item['theme_score']=8.0 if idx_norm and any(
+            t in idx_norm for t in ('코스피','kospi','코스닥','kosdaq','krx300')
+        ) else 5.0
+        item['match_evidence']='추종지수: '+index if index.strip() else 'ETF명: '+name
+        results.append(item)
+
+    if not results:
+        return pd.DataFrame()
+    return pd.DataFrame(results).sort_values(
+        ['theme_score','turnover','etf_name'],ascending=[False,False,True],
+        na_position='last'
+    ).reset_index(drop=True)
+
+
 def search_theme_db(region,asset,sector,subsector):
     """선택된 테크트리 조건을 로컬 자동매핑 테이블에서 검색."""
+    if region=='국내자산' and asset=='주식' and sector=='국내 대표지수':
+        return search_kr_index_db(subsector)
     if not db_available():
         return pd.DataFrame()
 
@@ -3155,6 +3227,8 @@ with left:
         st.caption('선택 조건이 변경되었습니다. 새 조건으로 보려면 검색 버튼을 다시 눌러주세요.')
     else:
         st.caption('KRX ETF는 저장된 로컬 DB를 사용하고, 해외자산에서는 미국상장 대표 ETF도 함께 검색합니다.')
+    if region=='국내자산' and asset=='주식' and sector=='국내 대표지수':
+        st.caption('국내 대표지수 검색에는 레버리지·인버스형 ETF도 포함될 수 있으므로 상품명을 확인하세요.')
 
 with right:
     st.subheader('🔎 조건에 맞는 ETF')
