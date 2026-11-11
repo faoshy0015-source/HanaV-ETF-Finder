@@ -14,7 +14,19 @@ st.set_page_config(page_title='HanaV ETF Finder', page_icon='🧭', layout='wide
 
 st.markdown('''
 <style>
+/* NanumSquareRound: body, widgets, headings, metrics. Fallback for blocked CDN. */
+@import url('https://cdn.jsdelivr.net/gh/innks/NanumSquareRound@master/nanumsquareround.css');
 :root {color-scheme:light;--primary-color:#008878;--background-color:#F4F8F7;--secondary-background-color:#EDF5F2;--text-color:#203D35}
+.stApp,
+.stApp p,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp h5, .stApp h6,
+.stApp button, .stApp input, .stApp textarea, .stApp select, .stApp label,
+.stApp [data-testid="stMetric"], .stApp [data-testid="stMetric"] *,
+.stApp [data-testid="stMarkdownContainer"], .stApp [data-testid="stMarkdownContainer"] *,
+.stApp [data-baseweb="tab"], .stApp [data-baseweb="select"] span,
+.stApp [role="option"], .stApp [data-testid="stDataFrame"] {
+    font-family:'NanumSquareRound','Malgun Gothic','Apple SD Gothic Neo',sans-serif!important;
+}
 .stApp,[data-testid="stAppViewContainer"]{background:#F4F8F7;color:#203D35}
 .block-container{max-width:1500px;padding-top:1rem}
 header[data-testid="stHeader"]{background:#F4F8F7}
