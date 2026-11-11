@@ -36,9 +36,11 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 [data-testid="stMetric"]{background:white;border:1px solid #D4E3DC;border-top:3px solid #008878;border-radius:9px;padding:12px}
 [data-testid="stMetricLabel"],[data-testid="stMetricValue"]{color:#203D35}
 /* 상단 DB 현황 카드 4개 전용: 상세 ETF 지표 카드는 기존 크기 유지 */
-.st-key-db_summary_cards [data-testid="stMetric"]{padding:9px 12px 8px!important;border-top-width:2px}
-.st-key-db_summary_cards [data-testid="stMetricLabel"],.st-key-db_summary_cards [data-testid="stMetricLabel"] p{font-size:12px!important;line-height:1.3!important}
-.st-key-db_summary_cards [data-testid="stMetricValue"]{font-size:22px!important;line-height:1.25!important}
+.st-key-db_summary_cards [data-testid="stMetric"]{padding:8px 12px 7px!important;border-top-width:2px}
+.st-key-db_summary_cards [data-testid="stMetricLabel"],
+.st-key-db_summary_cards [data-testid="stMetricLabel"] p{font-size:12px!important;line-height:1.25!important;margin:0!important}
+.st-key-db_summary_cards [data-testid="stMetricValue"],
+.st-key-db_summary_cards [data-testid="stMetricValue"] *{font-size:20px!important;line-height:1.2!important;margin:0!important}
 [data-testid="stExpander"]{background:white;border:1px solid #CFDFD9;border-radius:9px}
 [data-testid="stExpander"] summary{color:#203D35}
 [data-baseweb="tab"]{color:#536F64}
