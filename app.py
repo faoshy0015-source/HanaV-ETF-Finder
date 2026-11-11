@@ -54,6 +54,27 @@ hr{border-color:#D4E3DC}
 .hv-signature{font-size:11px;letter-spacing:.04em;color:#16816d;font-weight:750;background:#ffffffc9;border:1px solid #c7e5da;padding:9px 13px;border-radius:20px}
 .hv-hero-signature{margin-top:10px;font-size:11px;letter-spacing:.06em;color:#e1fffa;font-weight:700}
 .hv-footer-signature{text-align:center;margin:25px 0 10px;padding:14px 0;border-top:1px solid #d0e5dc;color:#54786d;font-size:12px}
+
+/* 검색/데이터 주요 메뉴 헤더: ETF Finder 밝은 민트 테마 */
+.hv-section-title{
+    background:linear-gradient(100deg,#DDF1E9 0%,#EFF8F4 100%);
+    border:1px solid #C5E0D5;
+    border-left:5px solid #008878;
+    border-radius:9px;
+    padding:11px 15px;
+    margin:8px 0 13px;
+    box-shadow:0 1px 4px rgba(15,88,72,.04);
+}
+.hv-section-title h3{
+    margin:0!important;
+    padding:0!important;
+    color:#15594D!important;
+    font-size:clamp(20px,2.1vw,25px)!important;
+    font-weight:800!important;
+    line-height:1.4!important;
+}
+@media(max-width:640px){.hv-section-title{padding:9px 12px}.hv-section-title h3{font-size:20px!important}}
+
 @media(max-width:640px){.hv-brandbar{padding:15px;gap:10px}.hv-brandname{font-size:25px}.hv-signature{font-size:10px;padding:7px 10px}}
 </style>''', unsafe_allow_html=True)
 
@@ -3106,7 +3127,7 @@ st.divider()
 # ETF DIRECT SEARCH - KRX + US LISTED
 # =========================================================
 
-st.subheader('🔎 ETF명 · 코드/티커 빠른검색')
+st.markdown('<div class="hv-section-title"><h3>🔎 ETF명 · 코드/티커 빠른검색</h3></div>', unsafe_allow_html=True)
 st.caption(
     f'미국상장 ETF 내장 카탈로그 {len(US_ETF_CATALOG):,}종 · QQQ/QQQM/SPY/SOXX/SMH 등은 '
     '인터넷 검색 성공 여부와 관계없이 바로 조회됩니다.'
@@ -3178,7 +3199,7 @@ st.divider()
 left,right=st.columns([0.82,1.45],gap='large')
 
 with left:
-    st.subheader('🌳 ETF 테크트리')
+    st.markdown('<div class="hv-section-title"><h3>🌳 ETF 테크트리</h3></div>', unsafe_allow_html=True)
     region=st.radio(
         'STEP 1 · 투자대상',
         list(TREE.keys()),
@@ -3238,7 +3259,7 @@ with left:
         st.caption('국내 대표지수 검색에는 레버리지·인버스형 ETF도 포함될 수 있으므로 상품명을 확인하세요.')
 
 with right:
-    st.subheader('🔎 조건에 맞는 ETF')
+    st.markdown('<div class="hv-section-title"><h3>🔎 조건에 맞는 ETF</h3></div>', unsafe_allow_html=True)
 
     if not st.session_state.get('tree_search_requested'):
         st.info('왼쪽에서 조건을 선택한 뒤 **선택 조건으로 ETF 검색** 버튼을 눌러주세요.')
@@ -3374,7 +3395,7 @@ st.divider()
 a,b=st.columns([1,1.25],gap='large')
 
 with a:
-    st.subheader('🔍 종목으로 ETF 찾기')
+    st.markdown('<div class="hv-section-title"><h3>🔍 종목으로 ETF 찾기</h3></div>', unsafe_allow_html=True)
     st.caption('편입종목 역검색은 현재 국내상장(KRX) ETF 로컬 DB를 대상으로 합니다.')
 
     names=st.text_input(
@@ -3465,7 +3486,7 @@ with a:
                 )
 
 with b:
-    st.subheader('⚡ 검색 구조')
+    st.markdown('<div class="hv-section-title"><h3>⚡ 검색 구조</h3></div>', unsafe_allow_html=True)
     st.markdown('''
 - **최초 1회 / 수동 업데이트:** KRX → 로컬 DB 저장
 - **종목 역검색:** 로컬 SQLite DB만 조회
@@ -3482,7 +3503,7 @@ st.divider()
 # LOCAL DB VIEW
 # =========================================================
 
-st.subheader('🗄️ 로컬 ETF DB')
+st.markdown('<div class="hv-section-title"><h3>🗄️ 로컬 ETF DB</h3></div>', unsafe_allow_html=True)
 t1,t2,t3=st.tabs(['ETF Master','ETF Holdings 미리보기','자동 테마 매핑'])
 
 with t1:
