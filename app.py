@@ -3555,77 +3555,236 @@ def _fetch_previous_session_etf_turnover(today_kst):
             'error':last_error or '최근 거래일의 KRX ETF 시세를 조회하지 못했습니다.'}
 
 
-st.markdown('<div class="hv-section-title"><h3>📊 전 거래일 ETF 거래대금 TOP 30</h3></div>', unsafe_allow_html=True)
-st.caption('국내 상장 ETF · KRX 거래대금 기준 · 휴장일에는 직전 거래일을 적용합니다. (ETN 제외)')
-_turnover_button_col,_turnover_note_col=st.columns([1,4])
-with _turnover_button_col:
-    if st.button('🔄 순위 새로고침',key='etf_turnover_top30_refresh',use_container_width=True):
-        _fetch_previous_session_etf_turnover.clear()
-        st.rerun()
 
-try:
-    from zoneinfo import ZoneInfo
-    _today_kst=datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
-    with st.spinner('KRX 전 거래일 ETF 거래대금을 조회하는 중...'):
-        _top_etf_result=_fetch_previous_session_etf_turnover(_today_kst)
-except Exception as _exc:
-    _top_etf_result={'as_of':'','rows':pd.DataFrame(),
-                     'error':f'거래대금 조회 오류 ({type(_exc).__name__})'}
+@st.cache_data(ttl=3600,show_spinner=False)
+def _fetch_us_etf_turnover_top30(cutoff_exclusive):
+    """Yahoo ETF screener candidates; dollar turnover is estimated close * shares traded."""
+    try:
+        import yfinance as yf
+        from zoneinfo import ZoneInfo
+        from yfinance import ETFQuery
+        response=yf.screen(
+            ETFQuery('eq',['region','us']),
+            size=250,offset=0,sortField='eodvolume',sortAsc=False
+        )
+        quotes=response.get('quotes',[]) if isinstance(response,dict) else []
+        if not quotes:
+            raise ValueError('Yahoo Finance ETF 스크리너 응답이 비어 있습니다.')
+    except Exception as exc:
+        return {'as_of':'','rows':pd.DataFrame(),'candidate_count':0,'method':'',
+                'error':f'Yahoo Finance ETF 스크리너 연결 실패: {type(exc).__name__} · {str(exc)[:160]}'}
 
-if _top_etf_result['rows'].empty:
-    st.warning(
-        'KRX 전 거래일 순위를 확인할 수 없습니다. '
-        '저장된 DB의 과거 거래대금을 최신 순위로 대체하지 않습니다. '
-        f"상세: {_top_etf_result['error']}"
-    )
-else:
-    _turnover_rank=_top_etf_result['rows'].copy()
-    _etf_names={}
-    if not master.empty and {'etf_code','etf_name'}.issubset(master.columns):
-        _etf_names=dict(zip(
-            master['etf_code'].astype(str).str.strip().str.upper().str.zfill(6),
-            master['etf_name'].fillna('').astype(str)
-        ))
-    _turnover_rank['ETF명']=_turnover_rank['ETF코드'].map(_etf_names).fillna('')
-    _unknown_names=_turnover_rank.index[
-        _turnover_rank['ETF명'].astype(str).str.strip().eq('')
-    ]
-    if len(_unknown_names):
+    from datetime import datetime as _dt
+    candidates={}
+    completed=[]
+    for q in quotes:
+        symbol=str(q.get('symbol') or '').strip().upper()
+        if not re.fullmatch(r'[A-Z][A-Z0-9.\-]{0,11}',symbol):
+            continue
+        if str(q.get('quoteType','ETF')).upper()!='ETF':
+            continue
+        if str(q.get('currency','USD')).upper()!='USD':
+            continue
+        name=str(q.get('shortName') or q.get('longName') or symbol)
+        close=pd.to_numeric(q.get('regularMarketPrice',q.get('regularMarketPreviousClose')),errors='coerce')
+        volume=pd.to_numeric(q.get('regularMarketVolume'),errors='coerce')
+        record={'ETF명':name,'티커':symbol,'종가(달러)':close,
+                '거래량(주)':volume,'등락률(%)':pd.to_numeric(q.get('regularMarketChangePercent'),errors='coerce')}
+        if pd.notna(close) and pd.notna(volume) and close>0 and volume>0:
+            candidates[symbol]=record
         try:
-            from pykrx import stock as _krx_names_stock
-            for _idx in _unknown_names:
-                _ticker=_turnover_rank.at[_idx,'ETF코드']
-                try:
-                    _turnover_rank.at[_idx,'ETF명']=_krx_names_stock.get_etf_ticker_name(_ticker) or _ticker
-                except Exception:
-                    _turnover_rank.at[_idx,'ETF명']=_ticker
-        except Exception:
-            for _idx in _unknown_names:
-                _turnover_rank.at[_idx,'ETF명']=_turnover_rank.at[_idx,'ETF코드']
+            stamp=float(q.get('regularMarketTime'))
+            day=_dt.fromtimestamp(stamp,tz=ZoneInfo('America/New_York')).date().isoformat()
+        except (ValueError,TypeError,OverflowError,OSError):
+            continue
+        if day<cutoff_exclusive and symbol in candidates:
+            completed.append({**record,'session':day})
 
-    _turnover_rank.insert(0,'순위',range(1,len(_turnover_rank)+1))
-    _turnover_rank['종가(원)']=_turnover_rank['종가'].astype('int64')
-    _turnover_rank['거래대금(억원)']=(_turnover_rank['거래대금']/100_000_000).round(1)
-    _turnover_rank['거래량(주)']=_turnover_rank['거래량'].astype('int64')
-    _turnover_rank=_turnover_rank[
-        ['순위','ETF명','ETF코드','종가(원)','거래대금(억원)','거래량(주)']
-    ]
-    st.caption(
-        f"📅 기준일: {_top_etf_result['as_of']} (장 마감) · "
-        '출처: KRX / pykrx · 거래대금은 억원 단위, 30개 종목 모두 표 내부 스크롤로 확인'
-    )
-    st.dataframe(
-        _turnover_rank,hide_index=True,use_container_width=True,height=580,
-        column_config={
-            '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
-            'ETF명':st.column_config.TextColumn('ETF명',width='large'),
-            'ETF코드':st.column_config.TextColumn('ETF코드',width='small'),
-            '종가(원)':st.column_config.NumberColumn('종가(원)',format='%d'),
-            '거래대금(억원)':st.column_config.NumberColumn('거래대금(억원)',format='%.1f'),
-            '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
-        },
-        key='daily_etf_turnover_top30_table'
-    )
+    # When Yahoo quotes still reflect an ongoing US session, use completed daily bars.
+    # Only the most actively traded screener candidates are downloaded to limit requests.
+    if len(completed)<30:
+        try:
+            symbols=sorted(candidates,key=lambda s:float(
+                candidates[s]['종가(달러)']*candidates[s]['거래량(주)']
+            ),reverse=True)[:110]
+            history=[]
+            for start in range(0,len(symbols),35):
+                batch=symbols[start:start+35]
+                prices=yf.download(
+                    batch,period='12d',interval='1d',auto_adjust=False,
+                    group_by='ticker',threads=6,progress=False,timeout=12
+                )
+                if prices is None or prices.empty:
+                    continue
+                for symbol in batch:
+                    try:
+                        if isinstance(prices.columns,pd.MultiIndex):
+                            frame=prices[symbol]
+                        elif len(batch)==1:
+                            frame=prices
+                        else:
+                            continue
+                        frame=frame[['Close','Volume']].copy()
+                        frame['session']=[pd.Timestamp(v).date().isoformat() for v in frame.index]
+                        frame=frame[frame['session']<cutoff_exclusive]
+                        frame['Close']=pd.to_numeric(frame['Close'],errors='coerce')
+                        frame['Volume']=pd.to_numeric(frame['Volume'],errors='coerce')
+                        frame=frame.dropna(subset=['Close','Volume'])
+                        frame=frame[(frame['Close']>0)&(frame['Volume']>0)]
+                        if frame.empty:
+                            continue
+                        last=frame.iloc[-1]
+                        prior=frame.iloc[-2]['Close'] if len(frame)>1 else None
+                        pct=(float(last['Close'])/float(prior)-1)*100 if prior is not None and prior>0 else None
+                        history.append({
+                            'ETF명':candidates[symbol]['ETF명'],'티커':symbol,
+                            '종가(달러)':float(last['Close']),
+                            '거래량(주)':float(last['Volume']),
+                            '등락률(%)':pct,'session':str(last['session'])
+                        })
+                    except (KeyError,ValueError,TypeError,IndexError):
+                        continue
+            completed=history
+            method='Yahoo 일별 종가 × 거래량 · 스크리너 후보 최대 110개'
+        except Exception as exc:
+            return {'as_of':'','rows':pd.DataFrame(),'candidate_count':len(quotes),
+                    'method':'','error':f'미국 ETF 전일 시세 조회 실패: {type(exc).__name__}'}
+    else:
+        method='Yahoo 종가 × 거래량 · 스크리너 거래량 상위 후보'
+
+    if not completed:
+        return {'as_of':'','rows':pd.DataFrame(),'candidate_count':len(quotes),
+                'method':method,'error':'최근 완료된 미국 거래일의 가격·거래량 자료가 없습니다.'}
+
+    frame=pd.DataFrame(completed)
+    asof=frame['session'].max()
+    frame=frame[frame['session']==asof].copy()
+    frame=frame.sort_values('종가(달러)',ascending=False).drop_duplicates('티커')
+    if len(frame)<30:
+        return {'as_of':asof,'rows':pd.DataFrame(),'candidate_count':len(quotes),
+                'method':method,'error':f'{asof} 기준 유효 ETF {len(frame)}개만 확보되어 순위를 표시하지 않습니다.'}
+
+    frame['거래대금(백만달러)']=frame['종가(달러)']*frame['거래량(주)']/1_000_000
+    frame=frame.nlargest(30,'거래대금(백만달러)').reset_index(drop=True)
+    frame.insert(0,'순위',range(1,len(frame)+1))
+    frame['거래량(주)']=frame['거래량(주)'].astype('int64')
+    return {'as_of':asof,'rows':frame[
+        ['순위','ETF명','티커','종가(달러)','등락률(%)','거래대금(백만달러)','거래량(주)']
+    ],'candidate_count':len(quotes),'method':method,'error':''}
+
+
+st.markdown('<div class="hv-section-title"><h3>📊 전 거래일 ETF 거래대금 TOP 30</h3></div>', unsafe_allow_html=True)
+_domestic_tab,_us_tab=st.tabs(['🇰🇷 국내 ETF TOP 30','🇺🇸 미국 ETF TOP 30'])
+with _domestic_tab:
+    st.caption('국내 상장 ETF · KRX 거래대금 기준 · 휴장일에는 직전 거래일을 적용합니다. (ETN 제외)')
+    _turnover_button_col,_turnover_note_col=st.columns([1,4])
+    with _turnover_button_col:
+        if st.button('🔄 순위 새로고침',key='etf_turnover_top30_refresh',use_container_width=True):
+            _fetch_previous_session_etf_turnover.clear()
+            st.rerun()
+
+    try:
+        from zoneinfo import ZoneInfo
+        _today_kst=datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+        with st.spinner('KRX 전 거래일 ETF 거래대금을 조회하는 중...'):
+            _top_etf_result=_fetch_previous_session_etf_turnover(_today_kst)
+    except Exception as _exc:
+        _top_etf_result={'as_of':'','rows':pd.DataFrame(),
+                         'error':f'거래대금 조회 오류 ({type(_exc).__name__})'}
+
+    if _top_etf_result['rows'].empty:
+        st.warning(
+            'KRX 전 거래일 순위를 확인할 수 없습니다. '
+            '저장된 DB의 과거 거래대금을 최신 순위로 대체하지 않습니다. '
+            f"상세: {_top_etf_result['error']}"
+        )
+    else:
+        _turnover_rank=_top_etf_result['rows'].copy()
+        _etf_names={}
+        if not master.empty and {'etf_code','etf_name'}.issubset(master.columns):
+            _etf_names=dict(zip(
+                master['etf_code'].astype(str).str.strip().str.upper().str.zfill(6),
+                master['etf_name'].fillna('').astype(str)
+            ))
+        _turnover_rank['ETF명']=_turnover_rank['ETF코드'].map(_etf_names).fillna('')
+        _unknown_names=_turnover_rank.index[
+            _turnover_rank['ETF명'].astype(str).str.strip().eq('')
+        ]
+        if len(_unknown_names):
+            try:
+                from pykrx import stock as _krx_names_stock
+                for _idx in _unknown_names:
+                    _ticker=_turnover_rank.at[_idx,'ETF코드']
+                    try:
+                        _turnover_rank.at[_idx,'ETF명']=_krx_names_stock.get_etf_ticker_name(_ticker) or _ticker
+                    except Exception:
+                        _turnover_rank.at[_idx,'ETF명']=_ticker
+            except Exception:
+                for _idx in _unknown_names:
+                    _turnover_rank.at[_idx,'ETF명']=_turnover_rank.at[_idx,'ETF코드']
+
+        _turnover_rank.insert(0,'순위',range(1,len(_turnover_rank)+1))
+        _turnover_rank['종가(원)']=_turnover_rank['종가'].astype('int64')
+        _turnover_rank['거래대금(억원)']=(_turnover_rank['거래대금']/100_000_000).round(1)
+        _turnover_rank['거래량(주)']=_turnover_rank['거래량'].astype('int64')
+        _turnover_rank=_turnover_rank[
+            ['순위','ETF명','ETF코드','종가(원)','거래대금(억원)','거래량(주)']
+        ]
+        st.caption(
+            f"📅 기준일: {_top_etf_result['as_of']} (장 마감) · "
+            '출처: KRX / pykrx · 거래대금은 억원 단위, 30개 종목 모두 표 내부 스크롤로 확인'
+        )
+        st.dataframe(
+            _turnover_rank,hide_index=True,use_container_width=True,height=580,
+            column_config={
+                '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
+                'ETF명':st.column_config.TextColumn('ETF명',width='large'),
+                'ETF코드':st.column_config.TextColumn('ETF코드',width='small'),
+                '종가(원)':st.column_config.NumberColumn('종가(원)',format='%d'),
+                '거래대금(억원)':st.column_config.NumberColumn('거래대금(억원)',format='%.1f'),
+                '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
+            },
+            key='daily_etf_turnover_top30_table'
+        )
+
+with _us_tab:
+    st.caption('미국 상장 ETF · Yahoo Finance 스크리너 후보 내 거래대금 추정 순위')
+    st.caption('미국 시장 전체 공식 순위가 아닙니다. Yahoo의 거래량 상위 ETF 최대 250개 후보 중 조회 가능한 종목을 비교합니다.')
+    if st.button('🔄 미국 ETF 순위 새로고침',key='us_etf_turnover_refresh'):
+        _fetch_us_etf_turnover_top30.clear()
+        st.rerun()
+    try:
+        from zoneinfo import ZoneInfo
+        _us_now=datetime.now(ZoneInfo('America/New_York'))
+        # 17:00 ET 이후에만 당일 미국 정규장을 완료된 것으로 취급
+        _us_cutoff=(_us_now.date()+timedelta(days=1) if _us_now.hour>=17 else _us_now.date()).isoformat()
+        with st.spinner('Yahoo Finance 미국 ETF 거래대금 순위를 조회하는 중...'):
+            _us_rank_result=_fetch_us_etf_turnover_top30(_us_cutoff)
+    except Exception as _exc:
+        _us_rank_result={'as_of':'','rows':pd.DataFrame(),
+                         'error':f'미국 ETF 시세 조회 오류 ({type(_exc).__name__})'}
+    if _us_rank_result['rows'].empty:
+        st.warning('미국 ETF 거래대금 순위를 확인할 수 없습니다. '+_us_rank_result.get('error',''))
+    else:
+        st.caption(
+            f"📅 기준일: {_us_rank_result['as_of']} (미국 현지 정규장) · "
+            f"출처: Yahoo Finance · 조회 후보 {_us_rank_result['candidate_count']:,}개 · "
+            '거래대금 = 종가 × 거래량 (추정치, 백만 USD)'
+        )
+        st.dataframe(
+            _us_rank_result['rows'],hide_index=True,use_container_width=True,height=580,
+            column_config={
+                '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
+                'ETF명':st.column_config.TextColumn('ETF명',width='large'),
+                '티커':st.column_config.TextColumn('티커',width='small'),
+                '종가(달러)':st.column_config.NumberColumn('종가(달러)',format='%.2f'),
+                '등락률(%)':st.column_config.NumberColumn('등락률(%)',format='%.2f'),
+                '거래대금(백만달러)':st.column_config.NumberColumn('거래대금(백만달러)',format='%.1f'),
+                '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
+            },
+            key='us_etf_turnover_top30_table'
+        )
+
 
 st.divider()
 
