@@ -35,6 +35,10 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 .stButton>button[kind="primary"]:hover{background:#006F62!important}
 [data-testid="stMetric"]{background:white;border:1px solid #D4E3DC;border-top:3px solid #008878;border-radius:9px;padding:12px}
 [data-testid="stMetricLabel"],[data-testid="stMetricValue"]{color:#203D35}
+/* 상단 DB 현황 카드 4개 전용: 상세 ETF 지표 카드는 기존 크기 유지 */
+.st-key-db_summary_cards [data-testid="stMetric"]{padding:9px 12px 8px!important;border-top-width:2px}
+.st-key-db_summary_cards [data-testid="stMetricLabel"],.st-key-db_summary_cards [data-testid="stMetricLabel"] p{font-size:12px!important;line-height:1.3!important}
+.st-key-db_summary_cards [data-testid="stMetricValue"]{font-size:22px!important;line-height:1.25!important}
 [data-testid="stExpander"]{background:white;border:1px solid #CFDFD9;border-radius:9px}
 [data-testid="stExpander"] summary{color:#203D35}
 [data-baseweb="tab"]{color:#536F64}
@@ -3010,11 +3014,12 @@ with st.expander('🧪 배포환경 진단', expanded=False):
         st.warning(f"yfinance 미설치 · 미국상장 ETF 상세조회 제한 · {_e}")
 
 
-_s1,_s2,_s3,_s4=st.columns(4)
-_s1.metric('저장 ETF',f"{_stats['etfs']:,}")
-_s2.metric('구성종목',f"{_stats['holdings']:,}")
-_s3.metric('기준일',_status.get('as_of','-'))
-_s4.metric('DB 방식','SQLite')
+with st.container(key='db_summary_cards'):
+    _s1,_s2,_s3,_s4=st.columns(4)
+    _s1.metric('저장 ETF',f"{_stats['etfs']:,}")
+    _s2.metric('구성종목',f"{_stats['holdings']:,}")
+    _s3.metric('기준일',_status.get('as_of','-'))
+    _s4.metric('DB 방식','SQLite')
 
 if _migrated:
     st.success('기존 CSV 데이터를 로컬 SQLite DB로 자동 변환했습니다. KRX 재조회는 하지 않았습니다.')
