@@ -236,7 +236,6 @@ with _logout_col:
 st.markdown('''<div class="hero"><h1>🧭 HanaV ETF Finder</h1><p>원하는 투자대상을 따라가면 조건에 맞는 ETF를 찾는 탐색 엔진</p><p style="font-size:14px;opacity:.9;margin-top:8px;">ETF 탐색 · 구성종목 분석 · 데이터 현황 및 관리</p><div class="hv-hero-signature">Designed &amp; Built by K.H. Ahn</div></div>''', unsafe_allow_html=True)
 
 
-
 # 분류체계는 UI/데이터와 분리해 향후 DB 기반으로 교체 가능하게 둔다.
 TREE = {
     '국내자산': {
@@ -1743,8 +1742,6 @@ def _db_cloud_indicator():
     else:
         if st.session_state.get('_db_cloud_error'):
             st.warning('☁️ 최근 동기화 오류: ' + st.session_state['_db_cloud_error'])
-        else:
-            pass  # 정상 연결 안내는 화면에 표시하지 않음
         if st.session_state.get('_db_cloud_saved_at'):
             st.caption('마지막 클라우드 백업: ' + st.session_state['_db_cloud_saved_at'])
 
