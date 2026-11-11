@@ -3108,6 +3108,27 @@ def _sector_number(value):
         return float('nan')
 
 
+def _sector_kst_quote_time(raw):
+    """Show quote time in Korea Standard Time; do not invent missing timestamps."""
+    from zoneinfo import ZoneInfo
+    value=str(raw or '').strip()
+    if not value:
+        return '시각 미제공'
+    if re.fullmatch(r'\d{2}:\d{2}(?::\d{2})?',value):
+        return value[:5]+' KST'
+    try:
+        stamp=pd.to_datetime(value,errors='coerce')
+        if pd.isna(stamp):
+            return '시각 미제공'
+        if stamp.tzinfo is None:
+            stamp=stamp.tz_localize(ZoneInfo('Asia/Seoul'))
+        else:
+            stamp=stamp.tz_convert(ZoneInfo('Asia/Seoul'))
+        return stamp.strftime('%Y-%m-%d %H:%M KST')
+    except (TypeError,ValueError,OverflowError):
+        return '시각 미제공'
+
+
 @st.cache_data(ttl=120,show_spinner=False)
 def _sector_kr_quotes(proxies):
     """Naver polling, primary KRX session fields; no fake realtime values on failure."""
@@ -3169,7 +3190,7 @@ def _sector_kr_quotes(proxies):
                      '현재가(원)':price,'등락률(%)':round(change,2),
                      '거래대금(억원)':round(_sector_number(q.get('aa'))/1e8,1),
                      '시장상태':str(q.get('ms') or ''),
-                     '시세시각':str(q.get('localTradedAt') or '')})
+                     '시세시각':_sector_kst_quote_time(q.get('localTradedAt'))})
     return {'rows':pd.DataFrame(rows),
             'error':('일부 ETF 시세 누락' if len(rows)<len(proxies) else ''),
             'source':'네이버 금융 공개 시세 (지연 가능)'}
@@ -3213,7 +3234,7 @@ def _sector_us_quotes():
                 pct=(float(last['Close'])/float(prev['Close'])-1)*100
                 if abs(pct)>100:
                     continue
-                stamp=dates[-1].strftime('%Y-%m-%d %H:%M ET')
+                stamp=dates[-1].tz_convert(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M KST')
                 rows.append({'업종':theme,'대표 ETF':name,'티커':ticker,
                              '현재가(달러)':round(float(last['Close']),2),
                              '등락률(%)':round(pct,2),'시세시각':stamp})
@@ -3246,8 +3267,7 @@ def _render_sector_momentum():
 
     try:
         from zoneinfo import ZoneInfo
-        market_tz='Asia/Seoul' if market=='🇰🇷 국내' else 'America/New_York'
-        requested_at=datetime.now(ZoneInfo(market_tz)).strftime('%Y-%m-%d %H:%M:%S')
+        requested_at=datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M:%S')
         if market=='🇰🇷 국내':
             reps=_sector_kr_representatives(master)
             proxies=tuple((p['업종'],p['티커'],p['대표 ETF']) for p in reps)
@@ -3274,7 +3294,7 @@ def _render_sector_momentum():
     b.metric('하락 업종',f'{negative}개')
     c.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
     st.caption(
-        f"시세 조회 요청: {requested_at} ({'KST' if market=='🇰🇷 국내' else 'ET'}) · "
+        f"시세 조회 요청: {requested_at} KST · "
         f"{result['source']} · 조회 성공 {len(frame)}개 업종"
     )
     st.caption('대표 ETF의 전일 종가 대비 등락률입니다. 업종 지수 자체의 수익률이 아니며 '
@@ -3302,6 +3322,7 @@ def _render_sector_momentum():
                  hide_index=True,use_container_width=True,height=340,
                  column_config={
                      '등락률(%)':st.column_config.NumberColumn('등락률(%)',format='%+.2f'),
+                     '시세시각':st.column_config.TextColumn('시세시각 (KST)'),
                      '현재가(원)':st.column_config.NumberColumn('현재가(원)',format='%.0f'),
                      '현재가(달러)':st.column_config.NumberColumn('현재가(달러)',format='%.2f')
                  })
