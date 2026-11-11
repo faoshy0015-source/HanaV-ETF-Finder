@@ -3037,6 +3037,279 @@ with st.expander('🧪 배포환경 진단', expanded=False):
         st.warning(f"yfinance 미설치 · 미국상장 ETF 상세조회 제한 · {_e}")
 
 
+
+# =========================================================
+# SECTOR MOMENTUM — current/latest ETF prices, refresh on demand
+# The proxy is ONE unlevered representative ETF per theme, not a sector index.
+# Data is never written to the local/cloud ETF database.
+# =========================================================
+
+_KR_SECTOR_PROXIES=[
+    ('반도체',('반도체',),('091160','396500')),
+    ('2차전지',('2차전지','2차 전지'),('305720','305540')),
+    ('방산',('방산','방위산업'),('449450',)),
+    ('전력기기',('전력기기','전력인프라','AI전력','전력설비'),()),
+    ('로봇',('로봇',),('445290',)),
+    ('바이오',('바이오','헬스케어'),('143860',)),
+    ('금융·은행',('금융','은행'),('091220','139270')),
+    ('자동차',('자동차',),('091180',)),
+    ('조선',('조선',),()),
+    ('인터넷',('인터넷','플랫폼'),()),
+    ('게임',('게임',),()),
+    ('화장품',('화장품',),())
+]
+
+_US_SECTOR_PROXIES=[
+    ('반도체','SOXX','iShares Semiconductor ETF'),
+    ('기술·AI','XLK','Technology Select Sector SPDR'),
+    ('방산·항공','ITA','iShares U.S. Aerospace & Defense ETF'),
+    ('로봇·자동화','BOTZ','Global X Robotics & AI ETF'),
+    ('바이오','XBI','SPDR S&P Biotech ETF'),
+    ('금융','XLF','Financial Select Sector SPDR'),
+    ('에너지','XLE','Energy Select Sector SPDR'),
+    ('전력·유틸리티','XLU','Utilities Select Sector SPDR'),
+    ('산업재','XLI','Industrial Select Sector SPDR'),
+    ('헬스케어','XLV','Health Care Select Sector SPDR'),
+    ('소비재','XLY','Consumer Discretionary Select Sector SPDR'),
+    ('커뮤니케이션','XLC','Communication Services Select Sector SPDR')
+]
+
+
+def _sector_kr_representatives(master_frame):
+    """Choose proxies from the *actual* local ETF master; never assume a code exists."""
+    if master_frame is None or master_frame.empty or not {'etf_code','etf_name'}.issubset(master_frame.columns):
+        return []
+    source=master_frame[['etf_code','etf_name']].dropna().copy()
+    source['etf_code']=source['etf_code'].astype(str).str.strip().str.zfill(6)
+    source=source[source['etf_code'].str.fullmatch(r'\d{6}')].drop_duplicates('etf_code')
+    source['etf_name']=source['etf_name'].astype(str)
+    forbidden=r'인버스|레버리지|커버드콜|2X|3X|선물|채권|단기채|금리|머니마켓'
+    source=source[~source['etf_name'].str.contains(forbidden,case=False,regex=True,na=False)]
+    result=[]
+    for theme,words,preferred in _KR_SECTOR_PROXIES:
+        matching=source[source['etf_name'].str.contains('|'.join(re.escape(v) for v in words),case=False,regex=True,na=False)]
+        if matching.empty:
+            continue
+        matching=matching.copy()
+        matching['_priority']=matching['etf_code'].map(
+            {ticker:rank for rank,ticker in enumerate(preferred)}
+        ).fillna(100)
+        matching['_major']=matching['etf_name'].str.startswith(('KODEX','TIGER','PLUS','ACE')).map({True:0,False:1})
+        matching=matching.sort_values(['_priority','_major','etf_name'])
+        chosen=matching.iloc[0]
+        result.append({'업종':theme,'티커':chosen['etf_code'],'대표 ETF':chosen['etf_name']})
+    return result
+
+
+def _sector_number(value):
+    try:
+        return float(str(value).replace(',','').replace('%','').strip())
+    except (TypeError,ValueError):
+        return float('nan')
+
+
+@st.cache_data(ttl=120,show_spinner=False)
+def _sector_kr_quotes(proxies):
+    """Naver polling, primary KRX session fields; no fake realtime values on failure."""
+    if not proxies:
+        return {'rows':pd.DataFrame(),'error':'조회할 대표 ETF가 없습니다.','source':'네이버 금융'}
+    codes=[p[1] for p in proxies]
+    details={}
+    failures=[]
+    headers={'User-Agent':'Mozilla/5.0','Referer':'https://finance.naver.com/',
+             'Accept':'application/json, text/plain, */*'}
+    for start in range(0,len(codes),6):
+        batch=codes[start:start+6]
+        try:
+            response=requests.get('https://polling.finance.naver.com/api/realtime',
+                                  params={'query':'SERVICE_ITEM:'+','.join(batch)},
+                                  headers=headers,timeout=8)
+            response.raise_for_status()
+            areas=response.json().get('result',{}).get('areas',[])
+            for area in areas:
+                for q in area.get('datas',[]):
+                    if isinstance(q,dict) and q.get('cd'):
+                        details[str(q['cd']).zfill(6)]=q
+        except Exception as exc:
+            failures.append(type(exc).__name__)
+
+    # Some Naver versions accept only a single SERVICE_ITEM code per area.
+    for code in codes:
+        if code in details:
+            continue
+        try:
+            response=requests.get('https://polling.finance.naver.com/api/realtime',
+                                  params={'query':'SERVICE_ITEM:'+code},
+                                  headers=headers,timeout=5)
+            response.raise_for_status()
+            areas=response.json().get('result',{}).get('areas',[])
+            for area in areas:
+                for q in area.get('datas',[]):
+                    if isinstance(q,dict) and str(q.get('cd','')).zfill(6)==code:
+                        details[code]=q
+                        break
+        except Exception:
+            pass
+
+    rows=[]
+    for theme,code,name in proxies:
+        q=details.get(code)
+        if not q:
+            continue
+        price=_sector_number(q.get('nv'))
+        change=_sector_number(q.get('cr'))
+        if not pd.notna(price) or not pd.notna(change) or price<=0 or abs(change)>100:
+            continue
+        sign=str(q.get('rf',''))
+        if sign in ('4','5'):
+            change=-abs(change)
+        elif sign in ('1','2'):
+            change=abs(change)
+        rows.append({'업종':theme,'대표 ETF':name,'티커':code,
+                     '현재가(원)':price,'등락률(%)':round(change,2),
+                     '거래대금(억원)':round(_sector_number(q.get('aa'))/1e8,1),
+                     '시장상태':str(q.get('ms') or ''),
+                     '시세시각':str(q.get('localTradedAt') or '')})
+    return {'rows':pd.DataFrame(rows),
+            'error':('일부 ETF 시세 누락' if len(rows)<len(proxies) else ''),
+            'source':'네이버 금융 공개 시세 (지연 가능)'}
+
+
+@st.cache_data(ttl=120,show_spinner=False)
+def _sector_us_quotes():
+    """Latest completed 5-minute bar vs preceding session's 5-minute close."""
+    try:
+        import yfinance as yf
+        from zoneinfo import ZoneInfo
+        symbols=[p[1] for p in _US_SECTOR_PROXIES]
+        prices=yf.download(symbols,period='5d',interval='5m',
+                           auto_adjust=False,prepost=False,group_by='ticker',
+                           progress=False,threads=6,timeout=14)
+        if prices is None or prices.empty:
+            raise ValueError('Yahoo 장중 데이터 응답 없음')
+        rows=[]
+        for theme,ticker,name in _US_SECTOR_PROXIES:
+            try:
+                series=prices[ticker] if isinstance(prices.columns,pd.MultiIndex) else prices
+                values=series[['Close','Volume']].copy()
+                values['Close']=pd.to_numeric(values['Close'],errors='coerce')
+                values=values.dropna(subset=['Close'])
+                values=values[values['Close']>0]
+                if values.empty:
+                    continue
+                dates=pd.to_datetime(values.index)
+                if dates.tz is None:
+                    dates=dates.tz_localize('America/New_York')
+                else:
+                    dates=dates.tz_convert('America/New_York')
+                values['session']=[d.date().isoformat() for d in dates]
+                sessions=values['session'].drop_duplicates().tolist()
+                if len(sessions)<2:
+                    continue
+                today=sessions[-1]
+                previous=sessions[-2]
+                last=values[values['session']==today].iloc[-1]
+                prev=values[values['session']==previous].iloc[-1]
+                pct=(float(last['Close'])/float(prev['Close'])-1)*100
+                if abs(pct)>100:
+                    continue
+                stamp=dates[-1].strftime('%Y-%m-%d %H:%M ET')
+                rows.append({'업종':theme,'대표 ETF':name,'티커':ticker,
+                             '현재가(달러)':round(float(last['Close']),2),
+                             '등락률(%)':round(pct,2),'시세시각':stamp})
+            except (KeyError,IndexError,TypeError,ValueError):
+                continue
+        return {'rows':pd.DataFrame(rows),
+                'error':'일부 ETF 시세 누락' if len(rows)<len(symbols) else '',
+                'source':'Yahoo Finance 5분봉 (지연 가능)'}
+    except Exception as exc:
+        return {'rows':pd.DataFrame(),'error':f'{type(exc).__name__}: {str(exc)[:120]}',
+                'source':'Yahoo Finance'}
+
+
+def _render_sector_momentum():
+    st.markdown('<div class="hv-section-title"><h3>📈 ETF 업종별 등락률 · 시장 모멘텀</h3></div>',
+                unsafe_allow_html=True)
+    markets,refresh=st.columns([3,1])
+    with markets:
+        market=st.radio('시장',('🇰🇷 국내','🇺🇸 미국'),horizontal=True,
+                        key='sector_momentum_market',label_visibility='collapsed')
+    with refresh:
+        pressed=st.button('🔄 현재 시세 새로고침',key='sector_momentum_refresh',
+                          use_container_width=True)
+    if pressed:
+        if market=='🇰🇷 국내':
+            _sector_kr_quotes.clear()
+        else:
+            _sector_us_quotes.clear()
+        st.rerun()
+
+    try:
+        from zoneinfo import ZoneInfo
+        market_tz='Asia/Seoul' if market=='🇰🇷 국내' else 'America/New_York'
+        requested_at=datetime.now(ZoneInfo(market_tz)).strftime('%Y-%m-%d %H:%M:%S')
+        if market=='🇰🇷 국내':
+            reps=_sector_kr_representatives(master)
+            proxies=tuple((p['업종'],p['티커'],p['대표 ETF']) for p in reps)
+            result=_sector_kr_quotes(proxies)
+        else:
+            result=_sector_us_quotes()
+        frame=result['rows'].copy()
+    except Exception as exc:
+        frame=pd.DataFrame()
+        result={'error':f'{type(exc).__name__}: {str(exc)[:120]}','source':'조회 실패'}
+        requested_at='-'
+
+    if frame.empty:
+        st.warning('업종별 현재 시세를 조회하지 못했습니다. '
+                   +str(result.get('error') or '데이터 제공처 연결 상태를 확인하세요.'))
+        return
+
+    frame=frame.sort_values('등락률(%)',ascending=False).reset_index(drop=True)
+    positive=int((frame['등락률(%)']>0).sum())
+    negative=int((frame['등락률(%)']<0).sum())
+    best=frame.iloc[0]
+    a,b,c=st.columns(3)
+    a.metric('상승 업종',f'{positive}개')
+    b.metric('하락 업종',f'{negative}개')
+    c.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
+    st.caption(
+        f"시세 조회 요청: {requested_at} ({'KST' if market=='🇰🇷 국내' else 'ET'}) · "
+        f"{result['source']} · 조회 성공 {len(frame)}개 업종"
+    )
+    st.caption('대표 ETF의 전일 종가 대비 등락률입니다. 업종 지수 자체의 수익률이 아니며 '
+               '장중에는 지연 시세, 장 종료/휴장일에는 마지막 거래 시세가 표시될 수 있습니다.')
+    if result.get('error'):
+        st.caption('데이터 참고: '+str(result['error']))
+
+    bars=alt.Chart(frame).mark_bar(cornerRadiusEnd=3).encode(
+        x=alt.X('등락률(%):Q',title='전일 대비 등락률 (%)'),
+        y=alt.Y('업종:N',sort=alt.SortField(field='등락률(%)',order='descending'),title=None),
+        color=alt.condition(alt.datum['등락률(%)']>=0,
+                            alt.value('#D34B4B'),alt.value('#3777C8')),
+        tooltip=[alt.Tooltip('업종:N'),alt.Tooltip('대표 ETF:N'),
+                 alt.Tooltip('티커:N'),alt.Tooltip('등락률(%):Q',format='+.2f')]
+    ).properties(height=max(280,len(frame)*30),background='#FFFFFF')
+    st.altair_chart(bars,use_container_width=True,theme=None)
+
+    columns=['업종','대표 ETF','티커']
+    columns.append('현재가(원)' if market=='🇰🇷 국내' else '현재가(달러)')
+    columns.append('등락률(%)')
+    if market=='🇰🇷 국내':
+        columns.append('거래대금(억원)')
+    columns.append('시세시각')
+    st.dataframe(frame[[v for v in columns if v in frame.columns]],
+                 hide_index=True,use_container_width=True,height=340,
+                 column_config={
+                     '등락률(%)':st.column_config.NumberColumn('등락률(%)',format='%+.2f'),
+                     '현재가(원)':st.column_config.NumberColumn('현재가(원)',format='%.0f'),
+                     '현재가(달러)':st.column_config.NumberColumn('현재가(달러)',format='%.2f')
+                 })
+
+
+_render_sector_momentum()
+
+
 with st.container(key='db_summary_cards'):
     _s1,_s2,_s3,_s4=st.columns(4)
     _s1.metric('저장 ETF',f"{_stats['etfs']:,}")
