@@ -54,6 +54,11 @@ hr{border-color:#D4E3DC}
 .hv-signature{font-size:11px;letter-spacing:.04em;color:#16816d;font-weight:750;background:#ffffffc9;border:1px solid #c7e5da;padding:9px 13px;border-radius:20px}
 .hv-hero-signature{margin-top:10px;font-size:11px;letter-spacing:.06em;color:#e1fffa;font-weight:700}
 .hv-footer-signature{text-align:center;margin:25px 0 10px;padding:14px 0;border-top:1px solid #d0e5dc;color:#54786d;font-size:12px}
+/* 로컬 DB 확인 영역만 기본 접힘: 제목은 기존 민트색 섹션 스타일 유지 */
+.st-key-local_db_collapsible [data-testid="stExpander"]{border:1px solid #C5E0D5!important;border-left:5px solid #008878!important;border-radius:9px!important;overflow:hidden}
+.st-key-local_db_collapsible [data-testid="stExpander"] summary{background:linear-gradient(100deg,#DDF1E9 0%,#EFF8F4 100%)!important;padding:11px 15px!important}
+.st-key-local_db_collapsible [data-testid="stExpander"] summary p{font-size:22px!important;font-weight:800!important;color:#15594D!important}
+
 
 /* 검색/데이터 주요 메뉴 헤더: ETF Finder 밝은 민트 테마 */
 .hv-section-title{
@@ -3503,42 +3508,43 @@ st.divider()
 # LOCAL DB VIEW
 # =========================================================
 
-st.markdown('<div class="hv-section-title"><h3>🗄️ 로컬 ETF DB</h3></div>', unsafe_allow_html=True)
-t1,t2,t3=st.tabs(['ETF Master','ETF Holdings 미리보기','자동 테마 매핑'])
+with st.container(key='local_db_collapsible'):
+    with st.expander('🗄️ 로컬 ETF DB · 상세 데이터 보기', expanded=False):
+        t1,t2,t3=st.tabs(['ETF Master','ETF Holdings 미리보기','자동 테마 매핑'])
 
-with t1:
-    if master.empty:
-        st.info('저장된 ETF Master 데이터가 없습니다.')
-    else:
-        st.dataframe(master,use_container_width=True,hide_index=True)
+        with t1:
+            if master.empty:
+                st.info('저장된 ETF Master 데이터가 없습니다.')
+            else:
+                st.dataframe(master,use_container_width=True,hide_index=True)
 
-with t2:
-    if not db_available():
-        st.info('저장된 ETF Holdings 데이터가 없습니다.')
-    else:
-        preview=load_holdings_preview_db(db_token(),500)
-        st.caption(f"전체 {_stats['holdings']:,}건 중 최대 500건만 미리 표시합니다. 검색은 전체 DB를 대상으로 합니다.")
-        st.dataframe(preview,use_container_width=True,hide_index=True)
+        with t2:
+            if not db_available():
+                st.info('저장된 ETF Holdings 데이터가 없습니다.')
+            else:
+                preview=load_holdings_preview_db(db_token(),500)
+                st.caption(f"전체 {_stats['holdings']:,}건 중 최대 500건만 미리 표시합니다. 검색은 전체 DB를 대상으로 합니다.")
+                st.dataframe(preview,use_container_width=True,hide_index=True)
 
-with t3:
-    if not db_available():
-        st.info('로컬 DB가 없습니다.')
-    elif _theme_error:
-        st.warning(f'자동 테마 매핑 오류: {_theme_error}')
-    else:
-        try:
-            with _db_connect() as conn:
-                theme_preview=pd.read_sql_query(
-                    'SELECT etf_code,region,asset_class,sector,subsector,score,evidence '
-                    'FROM etf_theme_map ORDER BY score DESC LIMIT 500',
-                    conn
-                )
-            st.caption(
-                f"전체 자동 매핑 {_theme_stats.get('rows',0):,}건 중 최대 500건을 표시합니다."
-            )
-            st.dataframe(theme_preview,use_container_width=True,hide_index=True)
-        except Exception as _e:
-            st.warning(f'테마 매핑 미리보기를 불러오지 못했습니다: {_e}')
+        with t3:
+            if not db_available():
+                st.info('로컬 DB가 없습니다.')
+            elif _theme_error:
+                st.warning(f'자동 테마 매핑 오류: {_theme_error}')
+            else:
+                try:
+                    with _db_connect() as conn:
+                        theme_preview=pd.read_sql_query(
+                            'SELECT etf_code,region,asset_class,sector,subsector,score,evidence '
+                            'FROM etf_theme_map ORDER BY score DESC LIMIT 500',
+                            conn
+                        )
+                    st.caption(
+                        f"전체 자동 매핑 {_theme_stats.get('rows',0):,}건 중 최대 500건을 표시합니다."
+                    )
+                    st.dataframe(theme_preview,use_container_width=True,hide_index=True)
+                except Exception as _e:
+                    st.warning(f'테마 매핑 미리보기를 불러오지 못했습니다: {_e}')
 
 
 st.markdown('<div class="hv-footer-signature">HanaV ETF Finder · <strong>Designed &amp; Built by K.H. Ahn</strong></div>', unsafe_allow_html=True)
