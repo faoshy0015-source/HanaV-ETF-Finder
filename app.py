@@ -3505,6 +3505,132 @@ st.divider()
 
 
 # =========================================================
+# PREVIOUS KRX TRADING SESSION - ETF TURNOVER TOP 30
+# Read-only live market lookup; does not update the saved ETF database.
+# =========================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _fetch_previous_session_etf_turnover(today_kst):
+    """Retrieve the most recent completed KRX ETF session before today (KST)."""
+    try:
+        from pykrx import stock as krx_stock
+    except Exception as exc:
+        return {'as_of': '', 'rows': pd.DataFrame(),
+                'error': f'pykrx 로딩 실패 ({type(exc).__name__})'}
+
+    last_calendar_day=datetime.strptime(today_kst,'%Y-%m-%d').date()-timedelta(days=1)
+    last_error=''
+    for days_back in range(12):
+        session=last_calendar_day-timedelta(days=days_back)
+        if session.weekday()>=5:
+            continue
+        try:
+            values=krx_stock.get_etf_ohlcv_by_ticker(session.strftime('%Y%m%d'))
+        except Exception as exc:
+            last_error=f'KRX 응답 오류 ({type(exc).__name__})'
+            continue
+        if values is None or values.empty:
+            continue
+        if not {'거래대금','종가','거래량'}.issubset(values.columns):
+            last_error='KRX 응답 필드가 예상과 다릅니다.'
+            continue
+
+        daily=values.reset_index()
+        ticker_col='티커' if '티커' in daily.columns else daily.columns[0]
+        daily['ETF코드']=daily[ticker_col].astype(str).str.strip().str.upper().str.zfill(6)
+        daily=daily[daily['ETF코드'].str.fullmatch(r'[0-9A-Z]{6}',na=False)].copy()
+        for col in ('거래대금','종가','거래량'):
+            daily[col]=pd.to_numeric(daily[col],errors='coerce').fillna(0)
+        daily=daily[(daily['거래대금']>0)&(daily['종가']>0)]
+        daily=daily.drop_duplicates('ETF코드',keep='first')
+        if len(daily)<30:
+            last_error='KRX 전종목 응답의 유효 ETF가 30개 미만입니다.'
+            continue
+
+        top=daily.nlargest(30,'거래대금')[['ETF코드','종가','거래량','거래대금']]
+        return {'as_of':session.strftime('%Y-%m-%d'),
+                'rows':top.reset_index(drop=True),'error':''}
+
+    return {'as_of':'','rows':pd.DataFrame(),
+            'error':last_error or '최근 거래일의 KRX ETF 시세를 조회하지 못했습니다.'}
+
+
+st.markdown('<div class="hv-section-title"><h3>📊 전 거래일 ETF 거래대금 TOP 30</h3></div>', unsafe_allow_html=True)
+st.caption('국내 상장 ETF · KRX 거래대금 기준 · 휴장일에는 직전 거래일을 적용합니다. (ETN 제외)')
+_turnover_button_col,_turnover_note_col=st.columns([1,4])
+with _turnover_button_col:
+    if st.button('🔄 순위 새로고침',key='etf_turnover_top30_refresh',use_container_width=True):
+        _fetch_previous_session_etf_turnover.clear()
+        st.rerun()
+
+try:
+    from zoneinfo import ZoneInfo
+    _today_kst=datetime.now(ZoneInfo('Asia/Seoul')).date().isoformat()
+    with st.spinner('KRX 전 거래일 ETF 거래대금을 조회하는 중...'):
+        _top_etf_result=_fetch_previous_session_etf_turnover(_today_kst)
+except Exception as _exc:
+    _top_etf_result={'as_of':'','rows':pd.DataFrame(),
+                     'error':f'거래대금 조회 오류 ({type(_exc).__name__})'}
+
+if _top_etf_result['rows'].empty:
+    st.warning(
+        'KRX 전 거래일 순위를 확인할 수 없습니다. '
+        '저장된 DB의 과거 거래대금을 최신 순위로 대체하지 않습니다. '
+        f"상세: {_top_etf_result['error']}"
+    )
+else:
+    _turnover_rank=_top_etf_result['rows'].copy()
+    _etf_names={}
+    if not master.empty and {'etf_code','etf_name'}.issubset(master.columns):
+        _etf_names=dict(zip(
+            master['etf_code'].astype(str).str.strip().str.upper().str.zfill(6),
+            master['etf_name'].fillna('').astype(str)
+        ))
+    _turnover_rank['ETF명']=_turnover_rank['ETF코드'].map(_etf_names).fillna('')
+    _unknown_names=_turnover_rank.index[
+        _turnover_rank['ETF명'].astype(str).str.strip().eq('')
+    ]
+    if len(_unknown_names):
+        try:
+            from pykrx import stock as _krx_names_stock
+            for _idx in _unknown_names:
+                _ticker=_turnover_rank.at[_idx,'ETF코드']
+                try:
+                    _turnover_rank.at[_idx,'ETF명']=_krx_names_stock.get_etf_ticker_name(_ticker) or _ticker
+                except Exception:
+                    _turnover_rank.at[_idx,'ETF명']=_ticker
+        except Exception:
+            for _idx in _unknown_names:
+                _turnover_rank.at[_idx,'ETF명']=_turnover_rank.at[_idx,'ETF코드']
+
+    _turnover_rank.insert(0,'순위',range(1,len(_turnover_rank)+1))
+    _turnover_rank['종가(원)']=_turnover_rank['종가'].astype('int64')
+    _turnover_rank['거래대금(억원)']=(_turnover_rank['거래대금']/100_000_000).round(1)
+    _turnover_rank['거래량(주)']=_turnover_rank['거래량'].astype('int64')
+    _turnover_rank=_turnover_rank[
+        ['순위','ETF명','ETF코드','종가(원)','거래대금(억원)','거래량(주)']
+    ]
+    st.caption(
+        f"📅 기준일: {_top_etf_result['as_of']} (장 마감) · "
+        '출처: KRX / pykrx · 거래대금은 억원 단위, 30개 종목 모두 표 내부 스크롤로 확인'
+    )
+    st.dataframe(
+        _turnover_rank,hide_index=True,use_container_width=True,height=580,
+        column_config={
+            '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
+            'ETF명':st.column_config.TextColumn('ETF명',width='large'),
+            'ETF코드':st.column_config.TextColumn('ETF코드',width='small'),
+            '종가(원)':st.column_config.NumberColumn('종가(원)',format='%d'),
+            '거래대금(억원)':st.column_config.NumberColumn('거래대금(억원)',format='%.1f'),
+            '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
+        },
+        key='daily_etf_turnover_top30_table'
+    )
+
+st.divider()
+
+
+# =========================================================
 # LOCAL DB VIEW
 # =========================================================
 
