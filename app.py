@@ -3480,107 +3480,147 @@ def _render_sector_momentum():
         return '#647a85'
 
     heat['색상']=heat['등락률(%)'].apply(_sector_tile_color)
-    st.caption(
-        '업종별 ETF 히트맵 · 상승 녹색 / 하락 빨간색 · '
-        '네모 면적은 업종 평균 등락률의 절댓값에 비례 (최소 크기 보정) · '
-        '시가총액과 무관'
-    )
-    st.caption(
-        '💡 업종 네모칸을 클릭하면 해당 업종 ETF 상승률 상위 5개를 보여줍니다. '
-        '하락 업종도 등락률 높은 순(하락폭이 작은 순)이며, '
-        '상단 경로를 클릭하면 전체 업종으로 돌아갑니다.'
-    )
-
     from html import escape as _html_escape
-    _map_ids=[]
-    _map_labels=[]
-    _map_parents=[]
-    _map_values=[]
-    _map_text=[]
-    _map_colors=[]
-    _map_hover=[]
+    drill_key='sector_heatmap_clicked_'+market_code
+    selected_sector=st.session_state.get(drill_key)
+    known_sectors=set(heat['업종'].astype(str))
+    if selected_sector not in known_sectors:
+        selected_sector=None
+        st.session_state.pop(drill_key,None)
 
-    for _,_sector in heat.iterrows():
-        _theme=str(_sector['업종'])
-        _theme_id='sector/'+_theme
-        _avg=float(_sector['등락률(%)'])
-        _weight=float(_sector['타일크기'])
-        _count=int(_sector['ETF수'])
-        _map_ids.append(_theme_id)
-        _map_labels.append(_theme)
-        _map_parents.append('')
-        _map_values.append(_weight)
-        _map_text.append(f'{_html_escape(_theme)}<br>{_avg:+.2f}%')
-        _map_colors.append(_sector_tile_color(_avg))
-        _map_hover.append(
-            f'{_html_escape(_theme)}<br>업종 평균 등락률: {_avg:+.2f}%'
-            f'<br>집계 ETF: {_count}개<br>클릭: ETF 상승률 상위 5개'
+    if selected_sector is None:
+        st.caption(
+            '업종 타일을 클릭하면 해당 업종의 ETF 등락률 상위 5개가 표시됩니다. '
+            '상승 녹색 / 하락 빨간색 · 타일 면적은 업종 평균 등락률의 절댓값 기준 (최소 크기 보정)'
         )
+        # Keep the overview flat. The previous two-level Plotly treemap
+        # zoomed into a large single sector tile rather than showing ETFs.
+        # Capture the sector click in Streamlit and render the ETF view separately.
+        overview=go.Figure(go.Treemap(
+            ids=['sector/'+str(name) for name in heat['업종']],
+            labels=heat['업종'].tolist(),
+            parents=['']*len(heat),
+            values=heat['타일크기'].tolist(),
+            text=[
+                f'{_html_escape(str(name))}<br>{float(pct):+.2f}%'
+                for name,pct in zip(heat['업종'],heat['등락률(%)'])
+            ],
+            textinfo='text',
+            textfont=dict(size=18,color='white',
+                          family='NanumSquareRound, Malgun Gothic, sans-serif'),
+            customdata=heat[['등락률(%)','ETF수']].to_numpy(),
+            hovertemplate=(
+                '%{label}<br>업종 ETF 평균 등락률: %{customdata[0]:+.2f}%'
+                '<br>집계 ETF: %{customdata[1]}개'
+                '<br>클릭: ETF 상위 5개 보기<extra></extra>'
+            ),
+            marker=dict(
+                colors=heat['색상'].tolist(),
+                line=dict(color='#F4F8F7',width=3)
+            ),
+            tiling=dict(packing='squarify',pad=3),
+            pathbar=dict(visible=False),
+            maxdepth=1,
+            sort=False
+        ))
+        overview.update_layout(
+            margin=dict(l=2,r=2,t=2,b=2),
+            height=445,
+            paper_bgcolor='rgba(0,0,0,0)',
+            font=dict(family='NanumSquareRound, Malgun Gothic, sans-serif'),
+            uniformtext=dict(minsize=11,mode='hide')
+        )
+        clicked=st.plotly_chart(
+            overview,use_container_width=True,
+            config={'displayModeBar':False},
+            key='sector_heatmap_overview_'+market_code,
+            on_select='rerun',
+            selection_mode='points'
+        )
+        try:
+            click_points=clicked['selection']['points']
+        except (KeyError,TypeError,AttributeError):
+            click_points=[]
+        if click_points:
+            clicked_id=str(click_points[0].get('id') or '')
+            clicked_name=clicked_id.removeprefix('sector/')
+            if clicked_id.startswith('sector/') and clicked_name in known_sectors:
+                st.session_state[drill_key]=clicked_name
+                st.session_state['sector_momentum_detail_'+market_code]=clicked_name
+                st.rerun()
 
-        _leaders=(
-            instruments.loc[instruments['업종']==_theme]
+        # Streamlit builds without hierarchical plot-click support can use
+        # this explicit selector. It also offers an accessible keyboard route.
+        with st.expander('⌄ 업종 직접 선택 (타일 클릭이 안 될 때)',expanded=False):
+            manual_sector=st.selectbox(
+                'ETF 상위 5개를 확인할 업종',
+                ['업종 선택']+heat['업종'].astype(str).tolist(),
+                key='sector_heatmap_manual_'+market_code
+            )
+            if manual_sector!='업종 선택':
+                st.session_state[drill_key]=manual_sector
+                st.session_state['sector_momentum_detail_'+market_code]=manual_sector
+                st.rerun()
+    else:
+        left,right=st.columns([4,1])
+        with left:
+            sector_avg=float(heat.loc[
+                heat['업종'].astype(str)==selected_sector,'등락률(%)'
+            ].iloc[0])
+            st.markdown(
+                f'#### {_html_escape(selected_sector)} ETF 등락률 TOP 5'
+            )
+            st.caption(
+                f'업종 평균 {sector_avg:+.2f}% · 조회된 개별 ETF 중 등락률이 높은 순'
+            )
+        with right:
+            if st.button('← 전체 업종으로',key='sector_heatmap_back_'+market_code,
+                         use_container_width=True):
+                st.session_state.pop(drill_key,None)
+                st.session_state['sector_heatmap_manual_'+market_code]='업종 선택'
+                st.rerun()
+
+        leaders=(
+            instruments.loc[instruments['업종'].astype(str)==selected_sector]
             .sort_values('등락률(%)',ascending=False)
             .drop_duplicates('티커',keep='first')
             .head(5)
         )
-        if _leaders.empty:
-            continue
-        # Leaf values sum to parent weight, so adding ETF children does not
-        # change sector tile size in the overview.
-        _sizes=_leaders['등락률(%)'].abs().astype(float)+0.30
-        _sizes=_sizes/_sizes.sum()*_weight
-
-        for _rank,(_index,_etf) in enumerate(_leaders.iterrows(),1):
-            _ticker=str(_etf['티커'])
-            _etf_name=str(_etf['대표 ETF'])
-            _rate=float(_etf['등락률(%)'])
-            _short_name=_etf_name if len(_etf_name)<=19 else _etf_name[:18]+'…'
-            _map_ids.append(_theme_id+'/etf/'+_ticker)
-            _map_labels.append(_etf_name)
-            _map_parents.append(_theme_id)
-            _map_values.append(float(_sizes.loc[_index]))
-            _map_text.append(
-                f'{_rank}. {_html_escape(_short_name)}<br>{_rate:+.2f}%'
+        if leaders.empty:
+            st.info('이 업종의 ETF 시세가 없습니다.')
+        else:
+            tiles=st.columns(len(leaders),gap='small')
+            for rank,(_,row) in enumerate(leaders.iterrows(),1):
+                etf_name=str(row['대표 ETF'])
+                etf_code=str(row['티커'])
+                pct=float(row['등락률(%)'])
+                fill=_sector_tile_color(pct)
+                with tiles[rank-1]:
+                    st.markdown(
+                        '<div style="height:157px;background:'+fill+';'
+                        'border-radius:8px;padding:13px 11px;color:white;'
+                        'box-sizing:border-box;display:flex;flex-direction:column;'
+                        'justify-content:space-between;box-shadow:0 1px 5px #1a605224;">'
+                        '<div style="font-size:12px;opacity:.90;font-weight:600;">'
+                        +str(rank)+'위 · '+_html_escape(etf_code)+'</div>'
+                        '<div style="font-size:14px;font-weight:800;line-height:1.3;'
+                        'overflow-wrap:anywhere;overflow:hidden;max-height:57px;">'
+                        +_html_escape(etf_name)+'</div>'
+                        '<div style="font-size:22px;font-weight:800;line-height:1;">'
+                        +f'{pct:+.2f}%</div></div>',
+                        unsafe_allow_html=True
+                    )
+            table_columns=['대표 ETF','티커','등락률(%)']
+            if market=='🇰🇷 국내':
+                table_columns.append('거래대금(억원)')
+            st.dataframe(
+                leaders[[col for col in table_columns if col in leaders.columns]],
+                hide_index=True,use_container_width=True,
+                column_config={
+                    '대표 ETF':st.column_config.TextColumn('ETF명',width='large'),
+                    '등락률(%)':st.column_config.NumberColumn(format='%+.2f')
+                }
             )
-            _map_colors.append(_sector_tile_color(_rate))
-            _map_hover.append(
-                f'{_rank}위 · {_html_escape(_etf_name)}'
-                f'<br>티커: {_html_escape(_ticker)}'
-                f'<br>ETF 등락률: {_rate:+.2f}%'
-                f'<br>업종: {_html_escape(_theme)}'
-            )
-
-    treemap=go.Figure(go.Treemap(
-        ids=_map_ids,
-        labels=_map_labels,
-        parents=_map_parents,
-        values=_map_values,
-        branchvalues='total',
-        maxdepth=1,
-        text=_map_text,
-        textinfo='text',
-        textfont=dict(size=17,color='white',
-                      family='NanumSquareRound, Malgun Gothic, sans-serif'),
-        hovertext=_map_hover,
-        hovertemplate='%{hovertext}<extra></extra>',
-        marker=dict(colors=_map_colors,
-                    line=dict(color='#F4F8F7',width=3)),
-        tiling=dict(packing='squarify',pad=3),
-        pathbar=dict(visible=True,side='top'),
-        sort=False
-    ))
-    treemap.update_layout(
-        margin=dict(l=2,r=2,t=7,b=2),
-        height=465,
-        paper_bgcolor='rgba(0,0,0,0)',
-        font=dict(family='NanumSquareRound, Malgun Gothic, sans-serif'),
-        uniformtext=dict(minsize=10,mode='hide')
-    )
-    st.plotly_chart(
-        treemap,use_container_width=True,
-        config={'displayModeBar':False},
-        key='sector_heatmap_'+market_code
-    )
 
     st.markdown('#### 🔎 업종별 ETF 상세 비교')
     themes=summary['업종'].tolist()
