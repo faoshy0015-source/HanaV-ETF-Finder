@@ -3184,22 +3184,45 @@ def _sector_kr_quotes(proxies):
         except Exception:
             continue
 
-    # Fallback is deliberately bounded so an unavailable quote provider cannot
-    # stall the Streamlit page for hundreds of individual HTTP requests.
-    missing=[code for code in codes if code not in details]
-    for code in missing[:24]:
-        try:
-            response=requests.get('https://polling.finance.naver.com/api/realtime',
-                                  params={'query':'SERVICE_ITEM:'+code},
-                                  headers=headers,timeout=4)
-            response.raise_for_status()
-            for area in response.json().get('result',{}).get('areas',[]):
-                for q in area.get('datas',[]):
-                    if isinstance(q,dict) and str(q.get('cd','')).zfill(6)==code:
-                        details[code]=q
-                        break
-        except Exception:
-            continue
+    # If a bulk response omits instruments, sample evenly across EVERY theme.
+    # Parallel bounded fallback prevents the first theme from monopolizing requests.
+    missing=set(code for code in codes if code not in details)
+    by_theme={}
+    for theme,code,_name in proxies:
+        if code in missing and code not in by_theme.setdefault(theme,[]):
+            by_theme[theme].append(code)
+    fallback=[]
+    while len(fallback)<48 and any(by_theme.values()):
+        for theme_codes in by_theme.values():
+            if theme_codes:
+                code=theme_codes.pop(0)
+                if code not in fallback:
+                    fallback.append(code)
+            if len(fallback)>=48:
+                break
+
+    if fallback:
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        def _single_quote(code):
+            try:
+                response=requests.get('https://polling.finance.naver.com/api/realtime',
+                                      params={'query':'SERVICE_ITEM:'+code},
+                                      headers=headers,timeout=4)
+                response.raise_for_status()
+                for area in response.json().get('result',{}).get('areas',[]):
+                    for q in area.get('datas',[]):
+                        if isinstance(q,dict) and str(q.get('cd','')).zfill(6)==code:
+                            return code,q
+            except Exception:
+                pass
+            return code,None
+
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures=[executor.submit(_single_quote,code) for code in fallback]
+            for future in as_completed(futures):
+                code,quote=future.result()
+                if quote is not None:
+                    details[code]=quote
 
     rows=[]
     for theme,code,name in proxies:
