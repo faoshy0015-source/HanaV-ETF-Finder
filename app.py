@@ -3366,8 +3366,20 @@ def _render_sector_momentum():
     if result.get('error'):
         st.caption('데이터 참고: '+str(result['error']))
 
+    # Use a symmetric, stable percentage axis so small daily moves do not
+    # visually fill the full width. Expand in 5pp steps for >10% moves.
+    from math import ceil
+    _sector_max_abs=float(summary['등락률(%)'].abs().max())
+    _sector_axis_limit=max(10,5*ceil(_sector_max_abs/5))
+    st.caption(
+        f'그래프 비교 눈금: -{_sector_axis_limit}% ~ +{_sector_axis_limit}% '
+        '· 0% 중앙 · 기본 ±10%, 10% 초과 시 자동 확장'
+    )
     bars=alt.Chart(summary).mark_bar(cornerRadiusEnd=3).encode(
-        x=alt.X('등락률(%):Q',title='업종별 ETF 단순평균 등락률 (%)'),
+        x=alt.X('등락률(%):Q',title='업종별 ETF 단순평균 등락률 (%)',
+                scale=alt.Scale(domain=[-_sector_axis_limit,_sector_axis_limit],
+                                zero=True,nice=False),
+                axis=alt.Axis(tickCount=9)),
         y=alt.Y('업종:N',sort=alt.SortField(field='등락률(%)',order='descending'),title=None),
         color=alt.condition(alt.datum['등락률(%)']>=0,
                             alt.value('#D34B4B'),alt.value('#3777C8')),
