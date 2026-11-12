@@ -3458,30 +3458,65 @@ def _render_sector_momentum():
     if result.get('error'):
         st.caption('데이터 참고: '+str(result['error']))
 
-    # Preserve a readable symmetric range. Start at ±7%; never clip a larger
-    # move: expand to the next even bound with a little breathing room.
-    from math import ceil
-    _sector_max_abs=float(summary['등락률(%)'].abs().max())
-    _sector_axis_limit=(
-        7 if _sector_max_abs<=7
-        else 2*ceil((_sector_max_abs*1.03)/2)
-    )
+    # Broadcast-style sector heatmap (green: gains, red: losses).
+    # Tile size softly reflects ETF coverage, NOT market capitalization.
+    import plotly.graph_objects as go
+    heat=summary.copy()
+    heat['타일크기']=heat['ETF수'].clip(lower=1).pow(0.5)
+
+    def _sector_tile_color(pct):
+        if pct>0:
+            if pct>=3: return '#075b3d'
+            if pct>=1.5: return '#0c744d'
+            if pct>=0.7: return '#168760'
+            return '#2b9b70'
+        if pct<0:
+            if pct<=-3: return '#9b2335'
+            if pct<=-1.5: return '#b12d42'
+            if pct<=-0.7: return '#bf3e50'
+            return '#cc5665'
+        return '#647a85'
+
+    heat['색상']=heat['등락률(%)'].apply(_sector_tile_color)
+    heat['표시문구']=[
+        f"{name}<br>{pct:+.2f}%"
+        for name,pct in zip(heat['업종'],heat['등락률(%)'])
+    ]
     st.caption(
-        f'그래프 비교 눈금: -{_sector_axis_limit}% ~ +{_sector_axis_limit}% '
-        '· 0% 중앙 · 기본 ±7%, 초과 시 자동 확장 (막대 잘림 없음)'
+        '업종별 ETF 히트맵 · 상승 녹색 / 하락 빨간색 · 색이 진할수록 등락폭 확대 · '
+        '네모 크기는 집계 ETF 개수를 완만하게 반영하며 시가총액과 무관'
     )
-    bars=alt.Chart(summary).mark_bar(cornerRadiusEnd=3).encode(
-        x=alt.X('등락률(%):Q',title='업종별 ETF 단순평균 등락률 (%)',
-                scale=alt.Scale(domain=[-_sector_axis_limit,_sector_axis_limit],
-                                zero=True,nice=False),
-                axis=alt.Axis(tickCount=9)),
-        y=alt.Y('업종:N',sort=alt.SortField(field='등락률(%)',order='descending'),title=None),
-        color=alt.condition(alt.datum['등락률(%)']>=0,
-                            alt.value('#D34B4B'),alt.value('#3777C8')),
-        tooltip=[alt.Tooltip('업종:N'),alt.Tooltip('ETF수:Q',title='집계 ETF 수'),
-                 alt.Tooltip('등락률(%):Q',title='평균 등락률',format='+.2f')]
-    ).properties(height=max(280,len(summary)*30),background='#FFFFFF')
-    st.altair_chart(bars,use_container_width=True,theme=None)
+    treemap=go.Figure(go.Treemap(
+        labels=heat['업종'].tolist(),
+        parents=['']*len(heat),
+        values=heat['타일크기'].tolist(),
+        text=heat['표시문구'].tolist(),
+        textinfo='text',
+        textfont=dict(size=18,color='white',
+                      family='NanumSquareRound, Malgun Gothic, sans-serif'),
+        customdata=heat[['등락률(%)','ETF수']].to_numpy(),
+        hovertemplate=(
+            '%{label}<br>업종 ETF 평균 등락률: %{customdata[0]:+.2f}%'
+            '<br>집계 ETF: %{customdata[1]}개<extra></extra>'
+        ),
+        marker=dict(colors=heat['색상'].tolist(),
+                    line=dict(color='#F4F8F7',width=3)),
+        tiling=dict(packing='squarify',pad=3),
+        pathbar=dict(visible=False),
+        sort=False
+    ))
+    treemap.update_layout(
+        margin=dict(l=2,r=2,t=2,b=2),
+        height=445,
+        paper_bgcolor='rgba(0,0,0,0)',
+        font=dict(family='NanumSquareRound, Malgun Gothic, sans-serif'),
+        uniformtext=dict(minsize=11,mode='hide')
+    )
+    st.plotly_chart(
+        treemap,use_container_width=True,
+        config={'displayModeBar':False},
+        key='sector_heatmap_'+market_code
+    )
 
     st.markdown('#### 🔎 업종별 ETF 상세 비교')
     themes=summary['업종'].tolist()
