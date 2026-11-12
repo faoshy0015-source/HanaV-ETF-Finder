@@ -55,28 +55,32 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
 .st-key-db_summary_cards [data-testid="stMetricValue"] *{font-size:20px!important;line-height:1.2!important;margin:0!important}
 
 /* 업종별 모멘텀: 상승/하락 카드 클릭, 최강세 업종 글씨 크기 통일 */
-.st-key-sector_rise_card .stButton>button[kind="secondary"],
-.st-key-sector_fall_card .stButton>button[kind="secondary"]{
-    background:#FFFFFF!important;color:#203D35!important;
-    border:1px solid #D4E3DC!important;border-top:3px solid #008878!important;
-    border-radius:9px!important;min-height:108px!important;
-    padding:15px 17px!important;width:100%!important;
-    justify-content:flex-start!important;text-align:left!important;box-shadow:none!important;
+.st-key-sector_summary_cards [data-testid="stMetric"]{
+    min-height:108px!important;
+    padding:14px 17px!important;
 }
-.st-key-sector_rise_card .stButton>button[kind="secondary"] p,
-.st-key-sector_fall_card .stButton>button[kind="secondary"] p{
-    white-space:pre-line!important;color:#203D35!important;
-    font-size:20px!important;line-height:1.7!important;
+.st-key-sector_summary_cards [data-testid="stMetricValue"],
+.st-key-sector_summary_cards [data-testid="stMetricValue"] *{
+    font-size:24px!important;
+    line-height:1.25!important;
+    font-weight:750!important;
 }
-.st-key-sector_rise_card .stButton>button[kind="secondary"]:hover,
-.st-key-sector_fall_card .stButton>button[kind="secondary"]:hover{
-    background:#E7F5EF!important;border-color:#008878!important;
+/* 업종 히트맵 클릭 안내를 흐린 설명글보다 선명하게 표시 */
+.hv-treemap-hint{
+    background:linear-gradient(90deg,#E0F3EB,#F1FAF6);
+    border:1px solid #B6DCD0;
+    border-left:5px solid #008878;
+    border-radius:8px;
+    padding:12px 15px;
+    margin:12px 0 13px;
+    color:#15594D;
+    font-family:'NanumSquareRound','Malgun Gothic',sans-serif;
+    font-size:15px;
+    font-weight:750;
+    line-height:1.6;
 }
-.st-key-sector_top_card [data-testid="stMetric"]{min-height:108px}
-.st-key-sector_top_card [data-testid="stMetricValue"],
-.st-key-sector_top_card [data-testid="stMetricValue"] *{
-    font-size:22px!important;line-height:1.25!important;font-weight:750!important;
-}
+.hv-treemap-hint small{display:block;font-weight:400;font-size:12px;color:#52786D;margin-top:3px}
+
 
 [data-testid="stExpander"]{background:white;border:1px solid #CFDFD9;border-radius:9px}
 [data-testid="stExpander"] summary{color:#203D35}
@@ -3372,77 +3376,13 @@ def _render_sector_momentum():
     positive=int((summary['등락률(%)']>0).sum())
     negative=int((summary['등락률(%)']<0).sum())
     best=summary.iloc[0]
-    a,b,c=st.columns(3)
     market_code='kr' if market=='🇰🇷 국내' else 'us'
-    direction_key=f'_sector_momentum_direction_{market_code}'
-    with a:
-        with st.container(key='sector_rise_card'):
-            if st.button(f'↗ 상승 업종\n{positive}개 · 클릭해서 보기',
-                         key='sector_rise_select',use_container_width=True):
-                st.session_state[direction_key]=(
-                    None if st.session_state.get(direction_key)=='rise' else 'rise'
-                )
-    with b:
-        with st.container(key='sector_fall_card'):
-            if st.button(f'↘ 하락 업종\n{negative}개 · 클릭해서 보기',
-                         key='sector_fall_select',use_container_width=True):
-                st.session_state[direction_key]=(
-                    None if st.session_state.get(direction_key)=='fall' else 'fall'
-                )
-    with c:
-        with st.container(key='sector_top_card'):
-            st.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
+    with st.container(key='sector_summary_cards'):
+        a,b,c=st.columns(3)
+        a.metric('↗ 상승 업종',f'{positive}개')
+        b.metric('↘ 하락 업종',f'{negative}개')
+        c.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
 
-    selected_direction=st.session_state.get(direction_key)
-    if selected_direction in ('rise','fall'):
-        up=selected_direction=='rise'
-        selected_summary=summary.loc[
-            summary['등락률(%)']>0 if up else summary['등락률(%)']<0
-        ].copy()
-        st.markdown('##### '+('📈 상승 업종별 대표 ETF' if up else '📉 하락 업종별 대표 ETF'))
-        if selected_summary.empty:
-            st.info('현재 해당 방향의 업종이 없습니다.')
-        else:
-            representatives=[]
-            for _,sector in selected_summary.iterrows():
-                theme=str(sector['업종'])
-                candidates=instruments.loc[instruments['업종']==theme].copy()
-                if candidates.empty:
-                    continue
-                if market=='🇰🇷 국내':
-                    candidates['_trade']=pd.to_numeric(
-                        candidates['거래대금(억원)'],errors='coerce'
-                    )
-                    candidates=candidates.sort_values(
-                        ['_trade','티커'],ascending=[False,True],na_position='last'
-                    )
-                else:
-                    priorities={ticker:idx for idx,(_theme,ticker,_name)
-                                in enumerate(_US_SECTOR_PROXIES)}
-                    candidates['_priority']=candidates['티커'].map(priorities).fillna(9999)
-                    candidates=candidates.sort_values(['_priority','티커'])
-                etf=candidates.iloc[0]
-                representatives.append({
-                    '업종':theme,
-                    '업종 평균(%)':round(float(sector['등락률(%)']),2),
-                    '대표 ETF':etf['대표 ETF'],
-                    '티커':etf['티커'],
-                    'ETF 등락률(%)':round(float(etf['등락률(%)']),2)
-                })
-            if representatives:
-                st.caption('국내: 업종 내 거래대금 최대 ETF 1개 · '
-                           '미국: 등록된 대표 ETF 우선순위 1개. '
-                           '업종 평균과 개별 ETF 수익률은 다를 수 있습니다.')
-                st.dataframe(
-                    pd.DataFrame(representatives),hide_index=True,
-                    use_container_width=True,
-                    height=min(430,max(115,36*len(representatives)+40)),
-                    column_config={
-                        '대표 ETF':st.column_config.TextColumn('대표 ETF',width='large'),
-                        '업종 평균(%)':st.column_config.NumberColumn(format='%+.2f'),
-                        'ETF 등락률(%)':st.column_config.NumberColumn(format='%+.2f')
-                    }
-                )
     st.caption(
         f"시세 조회 요청: {requested_at} KST · {result['source']} · "
         f"업종 {len(summary)}개 / 시세 확인 ETF {instruments['티커'].nunique()}개"
@@ -3489,10 +3429,15 @@ def _render_sector_momentum():
         st.session_state.pop(drill_key,None)
 
     if selected_sector is None:
-        st.caption(
-            '업종 타일을 클릭하면 해당 업종의 ETF 등락률 상위 5개가 표시됩니다. '
-            '상승 녹색 / 하락 빨간색 · 타일 면적은 업종 평균 등락률의 절댓값 기준 (최소 크기 보정)'
+        st.markdown(
+            '<div class="hv-treemap-hint">'
+            '👇 아래 업종 네모칸을 클릭하세요! '
+            '<strong>해당 업종 ETF 등락률 TOP 5</strong>를 바로 확인할 수 있습니다.'
+            '<small>↗ 표시가 있는 타일을 선택하세요 · 녹색 상승 / 빨간색 하락</small>'
+            '</div>',
+            unsafe_allow_html=True
         )
+        st.caption('타일 면적은 업종 평균 등락률의 절댓값에 비례하며 최소 크기를 보정합니다.')
         # Keep the overview flat. The previous two-level Plotly treemap
         # zoomed into a large single sector tile rather than showing ETFs.
         # Capture the sector click in Streamlit and render the ETF view separately.
@@ -3502,7 +3447,7 @@ def _render_sector_momentum():
             parents=['']*len(heat),
             values=heat['타일크기'].tolist(),
             text=[
-                f'{_html_escape(str(name))}<br>{float(pct):+.2f}%'
+                f'{_html_escape(str(name))} ↗<br>{float(pct):+.2f}%'
                 for name,pct in zip(heat['업종'],heat['등락률(%)'])
             ],
             textinfo='text',
