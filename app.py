@@ -3480,40 +3480,101 @@ def _render_sector_momentum():
         return '#647a85'
 
     heat['색상']=heat['등락률(%)'].apply(_sector_tile_color)
-    heat['표시문구']=[
-        f"{name}<br>{pct:+.2f}%"
-        for name,pct in zip(heat['업종'],heat['등락률(%)'])
-    ]
     st.caption(
-        '업종별 ETF 히트맵 · 상승 녹색 / 하락 빨간색 · 색이 진할수록 등락폭 확대 · '
-        '네모 면적은 업종 평균 등락률의 절댓값에 비례 (최소 가독성 보정) · 시가총액과 무관'
+        '업종별 ETF 히트맵 · 상승 녹색 / 하락 빨간색 · '
+        '네모 면적은 업종 평균 등락률의 절댓값에 비례 (최소 크기 보정) · '
+        '시가총액과 무관'
     )
+    st.caption(
+        '💡 업종 네모칸을 클릭하면 해당 업종 ETF 상승률 상위 5개를 보여줍니다. '
+        '하락 업종도 등락률 높은 순(하락폭이 작은 순)이며, '
+        '상단 경로를 클릭하면 전체 업종으로 돌아갑니다.'
+    )
+
+    from html import escape as _html_escape
+    _map_ids=[]
+    _map_labels=[]
+    _map_parents=[]
+    _map_values=[]
+    _map_text=[]
+    _map_colors=[]
+    _map_hover=[]
+
+    for _,_sector in heat.iterrows():
+        _theme=str(_sector['업종'])
+        _theme_id='sector/'+_theme
+        _avg=float(_sector['등락률(%)'])
+        _weight=float(_sector['타일크기'])
+        _count=int(_sector['ETF수'])
+        _map_ids.append(_theme_id)
+        _map_labels.append(_theme)
+        _map_parents.append('')
+        _map_values.append(_weight)
+        _map_text.append(f'{_html_escape(_theme)}<br>{_avg:+.2f}%')
+        _map_colors.append(_sector_tile_color(_avg))
+        _map_hover.append(
+            f'{_html_escape(_theme)}<br>업종 평균 등락률: {_avg:+.2f}%'
+            f'<br>집계 ETF: {_count}개<br>클릭: ETF 상승률 상위 5개'
+        )
+
+        _leaders=(
+            instruments.loc[instruments['업종']==_theme]
+            .sort_values('등락률(%)',ascending=False)
+            .drop_duplicates('티커',keep='first')
+            .head(5)
+        )
+        if _leaders.empty:
+            continue
+        # Leaf values sum to parent weight, so adding ETF children does not
+        # change sector tile size in the overview.
+        _sizes=_leaders['등락률(%)'].abs().astype(float)+0.30
+        _sizes=_sizes/_sizes.sum()*_weight
+
+        for _rank,(_index,_etf) in enumerate(_leaders.iterrows(),1):
+            _ticker=str(_etf['티커'])
+            _etf_name=str(_etf['대표 ETF'])
+            _rate=float(_etf['등락률(%)'])
+            _short_name=_etf_name if len(_etf_name)<=19 else _etf_name[:18]+'…'
+            _map_ids.append(_theme_id+'/etf/'+_ticker)
+            _map_labels.append(_etf_name)
+            _map_parents.append(_theme_id)
+            _map_values.append(float(_sizes.loc[_index]))
+            _map_text.append(
+                f'{_rank}. {_html_escape(_short_name)}<br>{_rate:+.2f}%'
+            )
+            _map_colors.append(_sector_tile_color(_rate))
+            _map_hover.append(
+                f'{_rank}위 · {_html_escape(_etf_name)}'
+                f'<br>티커: {_html_escape(_ticker)}'
+                f'<br>ETF 등락률: {_rate:+.2f}%'
+                f'<br>업종: {_html_escape(_theme)}'
+            )
+
     treemap=go.Figure(go.Treemap(
-        labels=heat['업종'].tolist(),
-        parents=['']*len(heat),
-        values=heat['타일크기'].tolist(),
-        text=heat['표시문구'].tolist(),
+        ids=_map_ids,
+        labels=_map_labels,
+        parents=_map_parents,
+        values=_map_values,
+        branchvalues='total',
+        maxdepth=1,
+        text=_map_text,
         textinfo='text',
-        textfont=dict(size=18,color='white',
+        textfont=dict(size=17,color='white',
                       family='NanumSquareRound, Malgun Gothic, sans-serif'),
-        customdata=heat[['등락률(%)','ETF수']].to_numpy(),
-        hovertemplate=(
-            '%{label}<br>업종 ETF 평균 등락률: %{customdata[0]:+.2f}%'
-            '<br>집계 ETF: %{customdata[1]}개'
-            '<br>면적 기준: 평균 등락률 절댓값 (+최소 크기 보정)<extra></extra>'
-        ),
-        marker=dict(colors=heat['색상'].tolist(),
+        hovertext=_map_hover,
+        hovertemplate='%{hovertext}<extra></extra>',
+        marker=dict(colors=_map_colors,
                     line=dict(color='#F4F8F7',width=3)),
         tiling=dict(packing='squarify',pad=3),
-        pathbar=dict(visible=False),
+        pathbar=dict(visible=True,side='top'),
         sort=False
     ))
     treemap.update_layout(
-        margin=dict(l=2,r=2,t=2,b=2),
-        height=445,
+        margin=dict(l=2,r=2,t=7,b=2),
+        height=465,
         paper_bgcolor='rgba(0,0,0,0)',
         font=dict(family='NanumSquareRound, Malgun Gothic, sans-serif'),
-        uniformtext=dict(minsize=11,mode='hide')
+        uniformtext=dict(minsize=10,mode='hide')
     )
     st.plotly_chart(
         treemap,use_container_width=True,
