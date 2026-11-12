@@ -3459,10 +3459,12 @@ def _render_sector_momentum():
         st.caption('데이터 참고: '+str(result['error']))
 
     # Broadcast-style sector heatmap (green: gains, red: losses).
-    # Tile size softly reflects ETF coverage, NOT market capitalization.
+    # Tile area tracks absolute sector return (positive and negative equally).
+    # Small readability floor prevents near-zero sectors from disappearing.
+    # This is neither market-cap nor fund-count weighting.
     import plotly.graph_objects as go
     heat=summary.copy()
-    heat['타일크기']=heat['ETF수'].clip(lower=1).pow(0.5)
+    heat['타일크기']=heat['등락률(%)'].abs()+0.30
 
     def _sector_tile_color(pct):
         if pct>0:
@@ -3484,7 +3486,7 @@ def _render_sector_momentum():
     ]
     st.caption(
         '업종별 ETF 히트맵 · 상승 녹색 / 하락 빨간색 · 색이 진할수록 등락폭 확대 · '
-        '네모 크기는 집계 ETF 개수를 완만하게 반영하며 시가총액과 무관'
+        '네모 면적은 업종 평균 등락률의 절댓값에 비례 (최소 가독성 보정) · 시가총액과 무관'
     )
     treemap=go.Figure(go.Treemap(
         labels=heat['업종'].tolist(),
@@ -3497,7 +3499,8 @@ def _render_sector_momentum():
         customdata=heat[['등락률(%)','ETF수']].to_numpy(),
         hovertemplate=(
             '%{label}<br>업종 ETF 평균 등락률: %{customdata[0]:+.2f}%'
-            '<br>집계 ETF: %{customdata[1]}개<extra></extra>'
+            '<br>집계 ETF: %{customdata[1]}개'
+            '<br>면적 기준: 평균 등락률 절댓값 (+최소 크기 보정)<extra></extra>'
         ),
         marker=dict(colors=heat['색상'].tolist(),
                     line=dict(color='#F4F8F7',width=3)),
