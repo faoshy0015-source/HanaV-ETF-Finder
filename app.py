@@ -3414,11 +3414,11 @@ def _render_sector_momentum():
     market_code='kr' if market=='🇰🇷 국내' else 'us'
     with st.container(key='sector_summary_cards'):
         a,b,c=st.columns(3)
-        a.metric('↗ 상승 업종',f'{positive}개')
-        b.metric('↘ 하락 업종',f'{negative}개')
-        with c:
+        with a:
             with st.container(key='sector_best_card'):
                 st.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
+        b.metric('↗ 상승 업종',f'{positive}개')
+        c.metric('↘ 하락 업종',f'{negative}개')
 
     st.caption(
         f"시세 조회 요청: {requested_at} KST · {result['source']} · "
