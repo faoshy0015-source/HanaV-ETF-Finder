@@ -65,6 +65,41 @@ input,textarea,[data-baseweb="select"] span{color:#203D35!important;caret-color:
     line-height:1.25!important;
     font-weight:750!important;
 }
+
+/* 최강세 업종만 민트색 카드로 강조하고 좌상단에 손그림 빨간 별을 배치 */
+.st-key-sector_best_card{overflow:visible!important}
+.st-key-sector_best_card [data-testid="stMetric"]{
+    position:relative!important;
+    overflow:visible!important;
+    background:linear-gradient(120deg,#D2F7E1 0%,#EAFBF3 65%,#C9F0DB 100%)!important;
+    border:2px solid #008F68!important;
+    border-top:3px solid #008F68!important;
+    box-shadow:0 4px 12px rgba(0,120,86,.13)!important;
+}
+.st-key-sector_best_card [data-testid="stMetric"]::before{
+    content:"";
+    display:block;
+    position:absolute;
+    z-index:3;
+    top:-25px;
+    left:-20px;
+    width:46px;
+    height:46px;
+    pointer-events:none;
+    background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2064%2064%22%3E%3Cpath%20d%3D%22M31%205%20L40%2024%20L59%2023%20L44%2037%20L48%2057%20L31%2045%20L13%2055%20L20%2036%20L5%2024%20L25%2024%20Z%22%20fill%3D%22none%22%20stroke%3D%22%23E52C32%22%20stroke-width%3D%224.5%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3Cpath%20d%3D%22M30%208%20L40%2026%20L57%2025%20L42%2036%20L46%2054%20L30%2043%20L15%2053%20L21%2035%20L7%2025%20L26%2026%20Z%22%20fill%3D%22none%22%20stroke%3D%22%23F0443F%22%20stroke-opacity%3D%22.7%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%2F%3E%3C%2Fsvg%3E");
+    background-size:contain;
+    background-repeat:no-repeat;
+}
+.st-key-sector_best_card [data-testid="stMetricLabel"],
+.st-key-sector_best_card [data-testid="stMetricLabel"] p{
+    color:#135547!important;
+    font-weight:800!important;
+}
+.st-key-sector_best_card [data-testid="stMetricValue"],
+.st-key-sector_best_card [data-testid="stMetricValue"] *{
+    color:#004E3E!important;
+    font-weight:850!important;
+}
 /* 업종 히트맵 클릭 안내를 흐린 설명글보다 선명하게 표시 */
 .hv-treemap-hint{
     background:linear-gradient(90deg,#E0F3EB,#F1FAF6);
@@ -3381,7 +3416,9 @@ def _render_sector_momentum():
         a,b,c=st.columns(3)
         a.metric('↗ 상승 업종',f'{positive}개')
         b.metric('↘ 하락 업종',f'{negative}개')
-        c.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
+        with c:
+            with st.container(key='sector_best_card'):
+                st.metric('최강세 업종',str(best['업종']),f"{best['등락률(%)']:+.2f}%")
 
     st.caption(
         f"시세 조회 요청: {requested_at} KST · {result['source']} · "
