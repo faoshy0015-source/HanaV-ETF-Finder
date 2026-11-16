@@ -4330,7 +4330,8 @@ with _domestic_tab:
             f"📅 기준일: {_top_etf_result['as_of']} (장 마감) · "
             '출처: KRX / pykrx · 거래대금은 억원 단위, 30개 종목 모두 표 내부 스크롤로 확인'
         )
-        st.dataframe(
+        st.caption('💡 ETF 행을 클릭하면 가격 차트와 구성종목을 바로 확인할 수 있습니다.')
+        _kr_top30_event=st.dataframe(
             _turnover_rank,hide_index=True,use_container_width=True,height=580,
             column_config={
                 '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
@@ -4340,8 +4341,24 @@ with _domestic_tab:
                 '거래대금(억원)':st.column_config.NumberColumn('거래대금(억원)',format='%.1f'),
                 '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
             },
+            on_select='rerun',selection_mode='single-row',
             key='daily_etf_turnover_top30_table'
         )
+        try:
+            _kr_top30_selected=list(_kr_top30_event.selection.rows)
+        except (AttributeError,TypeError):
+            _kr_top30_selected=[]
+        if _kr_top30_selected:
+            _kr_top30_idx=int(_kr_top30_selected[0])
+            if 0<=_kr_top30_idx<len(_turnover_rank):
+                _kr_top30_row=_turnover_rank.iloc[_kr_top30_idx]
+                _set_selected_etf(
+                    _kr_top30_row['ETF코드'],_kr_top30_row['ETF명'],'turnover_top30_kr'
+                )
+                render_etf_detail(
+                    st.session_state['selected_etf_code'],
+                    key_prefix='turnover_top30_kr_detail'
+                )
 
 with _us_tab:
     st.caption('미국 상장 ETF · Yahoo Finance 스크리너 후보 내 거래대금 추정 순위')
@@ -4367,7 +4384,8 @@ with _us_tab:
             f"출처: Yahoo Finance · 조회 후보 {_us_rank_result['candidate_count']:,}개 · "
             '거래대금 = 종가 × 거래량 (추정치, 백만 USD)'
         )
-        st.dataframe(
+        st.caption('💡 ETF 행을 클릭하면 가격 차트와 구성종목을 바로 확인할 수 있습니다.')
+        _us_top30_event=st.dataframe(
             _us_rank_result['rows'],hide_index=True,use_container_width=True,height=580,
             column_config={
                 '순위':st.column_config.NumberColumn('순위',format='%d',width='small'),
@@ -4378,8 +4396,24 @@ with _us_tab:
                 '거래대금(백만달러)':st.column_config.NumberColumn('거래대금(백만달러)',format='%.1f'),
                 '거래량(주)':st.column_config.NumberColumn('거래량(주)',format='%d')
             },
+            on_select='rerun',selection_mode='single-row',
             key='us_etf_turnover_top30_table'
         )
+        try:
+            _us_top30_selected=list(_us_top30_event.selection.rows)
+        except (AttributeError,TypeError):
+            _us_top30_selected=[]
+        if _us_top30_selected:
+            _us_top30_idx=int(_us_top30_selected[0])
+            if 0<=_us_top30_idx<len(_us_rank_result['rows']):
+                _us_top30_row=_us_rank_result['rows'].iloc[_us_top30_idx]
+                _set_selected_etf(
+                    _us_top30_row['티커'],_us_top30_row['ETF명'],'turnover_top30_us'
+                )
+                render_etf_detail(
+                    st.session_state['selected_etf_code'],
+                    key_prefix='turnover_top30_us_detail'
+                )
 
 
 st.divider()
