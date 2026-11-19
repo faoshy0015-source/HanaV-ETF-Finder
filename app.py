@@ -59,9 +59,9 @@ def _secret(name):
         pass
     return os.environ.get(name,"").strip()
 
-# Preserve the Stock Analyzer email restriction where explicitly configured.
-# With no email configuration, retain the ETF Finder's password-only access.
-if _secret("APP_ALLOWED_EMAILS"):
+# Preserve the existing ETF Finder's password-only gate by default.
+# Opt-in email approval requires ENABLE_EMAIL_AUTH=true and complete Supabase Auth secrets.
+if _secret("ENABLE_EMAIL_AUTH").lower() in ("1","true","yes","on"):
     from email_access import require_approved_email
     require_approved_email(st)
 
