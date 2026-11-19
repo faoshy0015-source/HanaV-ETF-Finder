@@ -1,0 +1,447 @@
+"""KRX session-aligned investor-flow reversal screening with partial coverage.
+
+KRX 'top net purchase' tables are not necessarily complete stock lists.
+Never replace missing investor feeds with zero, interpolate missing sessions,
+or call a partial screen an exhaustive all-stock scan.
+This module does not transmit or persist market data.
+"""
+from __future__ import annotations
+
+from datetime import datetime, timedelta
+from math import ceil, isfinite
+from zoneinfo import ZoneInfo
+import re
+import time
+
+import pandas as pd
+
+MARKETS = ("KOSPI", "KOSDAQ")
+INVESTORS = {"개인": "personal", "외국인": "foreign", "기관합계": "institution"}
+REQUIRED_FLOW = ("순매수거래량", "순매수거래대금")
+# Optional strict per-day data gate for clients explicitly requesting it.
+# Default is audit-only: scan symbols with complete aligned history and disclose
+# both per-day source coverage and actual qualified-symbol coverage.
+DEFAULT_COVERAGE = None
+
+
+class ScanDataError(RuntimeError):
+    """A missing or incomplete KRX response must never mean 'no signals'."""
+
+
+def _krx_retry_call(fetch, *, market, day, dataset, attempts=3,
+                    backoff_seconds=0.8, sleep=time.sleep):
+    """Retry empty or transient KRX responses; always report the failed source.
+
+    Never substitute cached/stale dates or zeros for an unavailable dataset.
+    Do not include raw exception text, which may expose session URLs/tokens.
+    """
+    if attempts < 1:
+        raise ValueError("attempts must be positive")
+    last_issue = "빈 응답"
+    for attempt in range(1, attempts + 1):
+        try:
+            result = fetch()
+            if isinstance(result, pd.DataFrame) and not result.empty:
+                return result
+            last_issue = "빈 응답"
+        except Exception as exc:
+            last_issue = type(exc).__name__
+        if attempt < attempts:
+            sleep(backoff_seconds * attempt)
+    raise ScanDataError(
+        f"KRX 자료 수집 실패: {market} {pd.Timestamp(day).date()} / "
+        f"{dataset} / {attempts}회 시도 / 마지막 상태: {last_issue}. "
+        "KRX 일시적 제한·세션 만료·자료 미제공 여부를 확인하세요."
+    )
+
+
+def _tidy_tickers(frame, columns):
+    if not isinstance(frame, pd.DataFrame) or frame.empty:
+        raise ScanDataError("KRX 빈 응답")
+    if not set(columns).issubset(frame.columns):
+        raise ScanDataError("KRX 필드 불일치: " + ", ".join(set(columns) - set(frame.columns)))
+    data = frame.copy()
+    data.index = data.index.astype(str).str.zfill(6)
+    data = data[data.index.map(lambda x: bool(re.fullmatch(r"\d{6}", x)))]
+    data = data[~data.index.duplicated(keep="first")]
+    if data.empty:
+        raise ScanDataError("KRX 종목코드가 없습니다")
+    for c in columns:
+        data[c] = pd.to_numeric(data[c], errors="coerce")
+    return data
+
+
+def assemble_daily_snapshot(day, market, prices, investor_tables, min_coverage=DEFAULT_COVERAGE):
+    """Record source coverage; missing tickers stay null and cannot signal."""
+    if market not in MARKETS:
+        raise ValueError("unsupported market")
+    quotes = _tidy_tickers(prices, ("종가", "거래량"))
+    quotes = quotes[(quotes["종가"] > 0) & (quotes["거래량"] > 0)].copy()
+    if quotes.empty:
+        raise ScanDataError(f"{market} {day}: 거래된 종목 없음")
+    universe = len(quotes)
+    quotes = quotes.rename(columns={"종가": "close", "거래량": "volume"})
+    if "거래대금" in quotes:
+        quotes["turnover"] = pd.to_numeric(quotes["거래대금"], errors="coerce")
+        quotes["turnover_source"] = "KRX 거래대금"
+    else:
+        quotes["turnover"] = quotes["close"] * quotes["volume"]
+        quotes["turnover_source"] = "종가×거래량 근사"
+    quotes["turnover"] = quotes["turnover"].where(
+        quotes["turnover"] > 0, quotes["close"] * quotes["volume"])
+    quotes["price_change_pct"] = pd.to_numeric(
+        quotes["등락률"], errors="coerce") if "등락률" in quotes else float("nan")
+    quotes = quotes[["close", "volume", "turnover", "turnover_source", "price_change_pct"]]
+    names = None
+    coverages = {}
+    for investor, prefix in INVESTORS.items():
+        if investor not in investor_tables:
+            raise ScanDataError(f"{market} {day}: {investor} 자료 누락")
+        raw = _tidy_tickers(investor_tables[investor], REQUIRED_FLOW)
+        # A ticker listed in KRX ranking without numeric flow fields is still
+        # missing data, not a valid zero-net-flow ticker.
+        valid_rows = raw[raw[list(REQUIRED_FLOW)].notna().all(axis=1)]
+        present = int(quotes.index.isin(valid_rows.index).sum())
+        ratio = present / universe
+        coverages[investor] = round(ratio, 4)
+        if min_coverage is not None and ratio < min_coverage:
+            raise ScanDataError(
+                f"{market} {day}: {investor} 자료의 종목 커버리지 "
+                f"{ratio:.1%} (필요 {min_coverage:.0%}, {present}/{universe}); "
+                "자료가 제한되거나 누락되어 시장 전체 검색 중단")
+        raw = valid_rows.rename(columns={
+            "순매수거래량": prefix + "_qty",
+            "순매수거래대금": prefix + "_krw",
+        })
+        quotes = quotes.join(raw[[prefix + "_qty", prefix + "_krw"]], how="left")
+        if names is None and "종목명" in raw.columns:
+            names = raw["종목명"].astype(str)
+    if names is not None:
+        quotes["name"] = names.reindex(quotes.index)
+    else:
+        quotes["name"] = quotes.index
+    quotes["name"] = quotes["name"].fillna(pd.Series(quotes.index, index=quotes.index))
+    quotes["date"] = pd.Timestamp(day).normalize()
+    quotes["market"] = market
+    quotes["code"] = quotes.index
+    return quotes.reset_index(drop=True), {
+        "date": str(pd.Timestamp(day).date()),
+        "market": market, "price_universe": universe,
+        "aligned_tickers": int(quotes[list(
+            prefix + "_qty" for prefix in INVESTORS.values()
+        )].notna().all(axis=1).sum()),
+        "investor_coverage": coverages,
+    }
+
+
+def discover_sessions(stock, end_day, history_sessions=25):
+    """Use actual KRX KOSPI index trading-session timestamps, not weekdays."""
+    end = pd.Timestamp(end_day).normalize()
+    start = end - pd.Timedelta(days=max(65, history_sessions * 2 + 15))
+    index = _krx_retry_call(
+        lambda: stock.get_index_ohlcv_by_date(
+            start.strftime("%Y%m%d"), end.strftime("%Y%m%d"), "1001"),
+        market="KOSPI", day=end, dataset="거래일 지수 캘린더",
+    )
+    sessions = pd.DatetimeIndex(pd.to_datetime(index.index, errors="coerce")).normalize()
+    sessions = sessions[~sessions.isna()].unique().sort_values()
+    if end not in sessions:
+        raise ScanDataError(f"{end.date()}: KRX 거래일이 아니거나 종가지수 미확정")
+    if len(sessions) < history_sessions:
+        raise ScanDataError(f"최근 {history_sessions}거래일 캘린더 부족")
+    return [pd.Timestamp(t).normalize() for t in sessions[-history_sessions:]]
+
+
+def fetch_market_panels(
+    day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
+    per_call_delay=None, progress=None, stock_module=None,
+    fetch_attempts=3, retry_backoff_seconds=0.8,
+):
+    """Audit source rows by real trading session; screen only confirmed stocks.
+
+    Net-purchase rankings can omit tickers even when prices are present.
+    Partial source days are retained with nulls; only stocks having complete
+    data for every mandatory session are assessed.
+    """
+    if lookback not in (10, 20):
+        raise ValueError("lookback must be 10 or 20")
+    markets = tuple(markets)
+    if not markets or any(m not in MARKETS for m in markets):
+        raise ValueError("Select at least one supported market")
+    if per_call_delay is None:
+        # Pacing is needed for remote KRX, but synthetic/offline adapters
+        # should not spend seconds sleeping in deterministic test runs.
+        per_call_delay = 0.30 if stock_module is None else 0.0
+    if per_call_delay < 0:
+        raise ValueError("per_call_delay must not be negative")
+    if stock_module is None:
+        from krx_auth import krx_login_configured
+        if not krx_login_configured():
+            raise ScanDataError(
+                "KRX 회원 계정 인증 필요: Streamlit Secrets 또는 서버 환경변수에 "
+                "KRX_ID, KRX_PW를 안전하게 등록하세요. "
+                "KRX_OPEN_API_KEY와는 별개입니다."
+            )
+        try:
+            from pykrx import stock as stock_module
+        except Exception as exc:
+            message = (
+                "KRX 라이브러리 초기화 실패 (pykrx): "
+                f"{type(exc).__name__}. "
+                "JSONDecodeError라면 KRX 서버가 JSON 대신 HTML·차단 안내·로그인 페이지를 "
+                "반환했을 가능성이 있습니다. KRX 계정의 실제 로그인 성공 여부, "
+                "요청 제한, pykrx 버전 및 Streamlit 서버 로그를 확인하세요."
+            )
+            raise ScanDataError(message) from exc
+    try:
+        dates = discover_sessions(
+            stock_module, day, history_sessions=lookback + 1)
+    except ScanDataError:
+        raise
+    except Exception as exc:
+        raise ScanDataError(
+            f"KRX 거래일 캘린더 처리 실패: {type(exc).__name__}. "
+            "시세 데이터 공급처 응답 형식을 확인하세요."
+        ) from exc
+    panels = []
+    quality = []
+    total = len(dates) * len(markets)
+    completed = 0
+    for market in markets:
+        for trading_day in dates:
+            stamp = trading_day.strftime("%Y%m%d")
+            try:
+                prices = _krx_retry_call(
+                    lambda: stock_module.get_market_ohlcv_by_ticker(
+                        stamp, market=market),
+                    market=market, day=trading_day, dataset="전체종목 시세",
+                    attempts=fetch_attempts,
+                    backoff_seconds=retry_backoff_seconds,
+                )
+                investor_tables = {}
+                for investor in INVESTORS:
+                    if per_call_delay > 0:
+                        time.sleep(per_call_delay)
+                    investor_tables[investor] = _krx_retry_call(
+                        lambda investor=investor:
+                            stock_module.get_market_net_purchases_of_equities(
+                                stamp, stamp, market, investor),
+                        market=market, day=trading_day,
+                        dataset=f"{investor} 순매수 수량·대금",
+                        attempts=fetch_attempts,
+                        backoff_seconds=retry_backoff_seconds,
+                    )
+                panel, summary = assemble_daily_snapshot(
+                    trading_day, market, prices, investor_tables,
+                    min_coverage=min_coverage)
+            except ScanDataError as exc:
+                # Include date and market for downstream field/schema failures too.
+                if f"{market} {trading_day.date()}" in str(exc):
+                    raise
+                raise ScanDataError(
+                    f"KRX 데이터 검증 중단: {market} {trading_day.date()} / "
+                    f"{str(exc)}"
+                ) from exc
+            except Exception as exc:
+                raise ScanDataError(
+                    f"{market} {trading_day.date()} KRX 처리 실패: {type(exc).__name__}"
+                ) from exc
+            panels.append(panel)
+            quality.append(summary)
+            completed += 1
+            if progress is not None:
+                progress(completed, total, f"{market} {stamp}")
+    return pd.concat(panels, ignore_index=True), quality, dates
+
+
+def _positive_last(row):
+    return (float(row["personal_qty"]) < 0
+            and float(row["personal_krw"]) < 0
+            and float(row["foreign_qty"] + row["institution_qty"]) > 0
+            and float(row["foreign_krw"] + row["institution_krw"]) > 0)
+
+
+def evaluate_stock_rows(
+    stock_rows, sessions, lookback=10, min_personal_buy_ratio=0.6,
+    min_sell_multiple=2.0, min_personal_share=0.05,
+    min_turnover=5_000_000_000,
+):
+    """Evaluate one symbol on an exactly aligned KRX session calendar."""
+    frame = stock_rows.sort_values("date").set_index("date")
+    required = (
+        "personal_qty", "personal_krw", "foreign_qty", "foreign_krw",
+        "institution_qty", "institution_krw", "close", "volume", "turnover",
+    )
+    calendar = pd.DatetimeIndex(sessions)
+    # Only the exact 10/20 prior market sessions are required for a signal.
+    # Missing investors/prices in any such session disqualifies this symbol;
+    # rows from older sessions must never substitute for missing days.
+    check_dates = calendar[-(lookback + 1):]
+    if len(check_dates) != lookback + 1 or not check_dates.isin(frame.index).all():
+        return None
+    frame = frame.reindex(calendar)
+    if frame.loc[check_dates, list(required)].isna().any().any():
+        return None
+    target = frame.loc[check_dates[-1]]
+    history = frame.loc[check_dates[:-1]]
+    if len(history) != lookback:
+        return None
+    buyer_days = int((history["personal_qty"] > 0).sum())
+    if buyer_days < ceil(lookback * min_personal_buy_ratio) or history["personal_qty"].sum() <= 0:
+        return None
+    if not _positive_last(target) or target["volume"] <= 0 or target["turnover"] < min_turnover:
+        return None
+    previous_abs = float(history["personal_qty"].abs().median())
+    previous_volume = float(history["volume"].median())
+    if previous_volume <= 0:
+        return None
+    multiple = abs(float(target["personal_qty"])) / max(previous_abs, previous_volume * 0.001)
+    sell_share = abs(float(target["personal_qty"])) / float(target["volume"])
+    if multiple < min_sell_multiple or sell_share < min_personal_share:
+        return None
+    buyer_qty = float(target["foreign_qty"] + target["institution_qty"])
+    absorption = buyer_qty / abs(float(target["personal_qty"]))
+    volume_multiple = float(target["volume"]) / previous_volume
+    streak = 0
+    # The full KRX calendar (including any missing rows) breaks a streak.
+    for _, row in frame.iloc[::-1].iterrows():
+        if row[list(required)].isna().any() or not _positive_last(row):
+            break
+        streak += 1
+    price_history = frame["close"].tail(20)
+    ma20 = float(price_history.mean()) if (
+        len(price_history) == 20 and price_history.notna().all()) else None
+    price_pos = float((target["close"] / ma20 - 1) * 100) if ma20 and ma20 > 0 else None
+    strength = round(min(100,
+        30 * buyer_days / lookback
+        + 25 * min(multiple / 3, 1)
+        + 30 * min(sell_share / 0.15, 1)
+        + 15 * min(absorption, 1)))
+    return {
+        "code": str(target["code"]), "name": str(target["name"]),
+        "market": str(target["market"]),
+        "date": str(calendar[-1].date()),
+        "transition": "신규 전환" if streak == 1 else f"{streak}거래일 연속 순매수 대응",
+        "first_day": bool(streak == 1),
+        "streak": int(streak),
+        "personal_buy_days": buyer_days,
+        "prior_days": lookback,
+        "personal_qty": int(target["personal_qty"]),
+        "foreign_qty": int(target["foreign_qty"]),
+        "institution_qty": int(target["institution_qty"]),
+        "personal_krw": int(target["personal_krw"]),
+        "foreign_krw": int(target["foreign_krw"]),
+        "institution_krw": int(target["institution_krw"]),
+        "sell_multiple": round(multiple, 2),
+        "sell_share_pct": round(sell_share * 100, 2),
+        "absorption_pct": round(absorption * 100, 2),
+        "volume_multiple": round(volume_multiple, 2),
+        "close": int(target["close"]),
+        "price_change_pct": (
+            round(float(target["price_change_pct"]), 2)
+            if pd.notna(target.get("price_change_pct")) else None
+        ),
+        "ma20_gap_pct": round(price_pos, 2) if price_pos is not None else None,
+        "turnover_krw": int(target["turnover"]),
+        "turnover_source": str(target["turnover_source"]),
+        "strength": strength,
+    }
+
+
+def evaluate_market_panel(panel, dates, lookback=10, **kwargs):
+    """Screen all price-universe symbols; count only complete, aligned histories."""
+    dates = pd.DatetimeIndex(dates)
+    if panel.empty or len(dates) < lookback + 1:
+        raise ScanDataError("필수 수급·가격 데이터가 부족합니다")
+    if "market" not in panel or "code" not in panel:
+        raise ScanDataError("종목 데이터 스키마 오류")
+    required = (
+        "personal_qty", "personal_krw", "foreign_qty", "foreign_krw",
+        "institution_qty", "institution_krw", "close", "volume", "turnover",
+    )
+    eligible_dates = dates[-(lookback + 1):]
+    output = []
+    incomplete = 0
+    eligible = 0
+    missing_asof = 0
+    asof = dates[-1]
+    for (market, ticker), symbol in panel.groupby(["market", "code"], sort=False):
+        indexed = symbol.sort_values("date").set_index("date")
+        if asof not in indexed.index:
+            missing_asof += 1
+            continue
+        if not eligible_dates.isin(indexed.index).all():
+            incomplete += 1
+            continue
+        window = indexed.reindex(eligible_dates)
+        if window[list(required)].isna().any().any():
+            incomplete += 1
+            continue
+        eligible += 1
+        hit = evaluate_stock_rows(symbol, dates, lookback=lookback, **kwargs)
+        if hit is not None:
+            output.append(hit)
+    output.sort(key=lambda d: (d["first_day"], d["strength"],
+                               abs(d["personal_krw"])), reverse=True)
+    today_count = int(panel.loc[
+        panel["date"] == asof, ["market", "code"]].drop_duplicates().shape[0])
+    ratio = round(eligible / today_count, 4) if today_count else 0
+    return output, {
+        "scanned_tickers": today_count,
+        "eligible_tickers": eligible,
+        "excluded_incomplete_tickers": incomplete,
+        "eligible_ratio": ratio,
+        "missing_asof": missing_asof,
+        "matched_signals": len(output),
+        "new_signals": sum(1 for r in output if r["first_day"]),
+        "continuations": sum(1 for r in output if not r["first_day"]),
+    }
+
+def run_full_scan(
+    day, markets=MARKETS, lookback=10, min_coverage=DEFAULT_COVERAGE,
+    progress=None, stock_module=None, **kwargs
+):
+    try:
+        panel, quality, dates = fetch_market_panels(
+            day, markets=markets, lookback=lookback, min_coverage=min_coverage,
+            progress=progress, stock_module=stock_module)
+    except ScanDataError:
+        raise
+    except Exception as exc:
+        raise ScanDataError(
+            "KRX 데이터 수집 단계 실패: " + type(exc).__name__
+            + ". JSONDecodeError인 경우 응답이 유효한 JSON인지, "
+            "KRX 서버 로그인/세션과 요청 제한을 확인하세요."
+        ) from exc
+    try:
+        hits, counts = evaluate_market_panel(
+            panel, dates, lookback=lookback, **kwargs)
+    except Exception as exc:
+        raise ScanDataError(
+            "KRX 종목별 수급 분석 단계 실패: " + type(exc).__name__
+            + ". 원천 자료의 열 구조와 결측값을 확인하세요."
+        ) from exc
+    if counts["eligible_tickers"] == 0:
+        raise ScanDataError(
+            "필수 거래일의 개인·외국인·기관 수급자료가 모두 확인된 종목이 "
+            "0개입니다. 결과를 '수급 전환 0건'으로 처리할 수 없어 검색을 중단합니다."
+        )
+    min_daily = min(
+        value for row in quality
+        for value in row["investor_coverage"].values()
+    )
+    is_partial = min_daily < 1 or counts["eligible_ratio"] < 1
+    return {
+        "status": "partial" if is_partial else "success",
+        "asof": str(dates[-1].date()),
+        "generated_kst": datetime.now(ZoneInfo("Asia/Seoul")).isoformat(timespec="seconds"),
+        "method": "KRX ranking-source partial-universe, exact-session stock eligibility",
+        "settings": {"markets": list(markets), "lookback": lookback, **kwargs},
+        "totals": counts,
+        "coverage": {
+            "per_day_market": quality,
+            "min_investor_coverage": min_daily,
+            "required_daily_coverage": min_coverage,
+        },
+        "results": hits,
+    }

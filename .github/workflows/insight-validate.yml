@@ -1,0 +1,42 @@
+name: HanaV Insight integration validation
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  python-syntax-and-routing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile all Python modules
+        run: python -m compileall -q app.py etf_finder.py stock_analyze.py pages/ .
+      - name: Verify unified navigation and modules
+        run: |
+          python - <<'PY'
+          import ast
+          from pathlib import Path
+          root=Path(".")
+          router=(root/"app.py").read_text(encoding="utf-8")
+          routes=[
+              "etf_finder.py",
+              "pages/2_시장_대시보드.py",
+              "stock_analyze.py",
+              "pages/0_전종목_수급_레이더.py",
+              "pages/1_수급_전환_검색.py",
+          ]
+          for route in routes:
+              assert (root/route).is_file(), f"Missing page: {route}"
+              assert f'st.Page("{route}"' in router, f"Missing route: {route}"
+          assert router.count("st.Page(")==5
+          assert 'position="hidden"' in router
+          assert "APP_PASSWORD" in router
+          for path in root.rglob("*.py"):
+              if ".git" not in path.parts:
+                  ast.parse(path.read_text(encoding="utf-8"),filename=str(path))
+          print("HanaV Insight routing and Python syntax verified.")
+          PY
