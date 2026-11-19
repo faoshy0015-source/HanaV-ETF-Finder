@@ -33,6 +33,17 @@ st.markdown("""
 .stApp section[data-testid="stSidebar"] [data-testid="stButton"] button{
  background:#f6fbf8!important;color:#075443!important;
  border:1px solid #b6d9c9!important}
+section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"],
+section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p,
+section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]{
+ color:#eafbf2!important;font-weight:700!important;
+}
+section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"]:hover{
+ background:#0b8067!important;border-radius:10px
+}
+section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"][aria-current="page"]{
+ background:#009574!important;border-radius:10px
+}
 .insight-nav-brand{font-size:26px;font-weight:900;color:#fff;line-height:1.2;padding:12px 0 2px}
 .insight-nav-brand strong{color:#6de2b7}
 .insight-nav-subtitle{font-size:11px;color:#d5e6df;line-height:1.5;margin-bottom:8px}
@@ -89,7 +100,16 @@ pages=[
     st.Page("pages/0_전종목_수급_레이더.py",title="전종목 수급 레이더",icon="📡",url_path="flow-radar"),
     st.Page("pages/1_수급_전환_검색.py",title="수급전환 검색",icon="🔄",url_path="flow-reversal"),
 ]
-page=st.navigation(pages)
+page=st.navigation(pages,position="hidden")
+with st.sidebar:
+    for path,title,icon in (
+        ("etf_finder.py","ETF Finder","📈"),
+        ("pages/2_시장_대시보드.py","시장 대시보드","📊"),
+        ("stock_analyze.py","Analyze","🔎"),
+        ("pages/0_전종목_수급_레이더.py","전종목 수급 레이더","📡"),
+        ("pages/1_수급_전환_검색.py","수급전환 검색","🔄"),
+    ):
+        st.page_link(path,label=title,icon=icon,use_container_width=True)
 
 a,b,c=st.columns([1.5,2.6,.65],vertical_alignment="bottom")
 with a:
