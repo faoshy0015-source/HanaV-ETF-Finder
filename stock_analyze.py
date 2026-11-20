@@ -877,7 +877,11 @@ with t3:
                 )
         if not any(number(forecasts.get(yr,forecasts.get(str(yr),{})).get('current_price_per'))
                    for yr in (current_year,current_year+1)):
-            st.info('연도별 예상 EPS/시세가 확인되지 않아 Forward PER을 산출하지 않았습니다. 외부 추정치를 임의로 대입하지 않습니다.')
+            st.info('연도별 예상 EPS/시세가 확인되지 않아 연도별 예상 PER을 산출하지 않았습니다. 외부 추정치를 임의로 대입하지 않습니다.')
+        npay_forward=number(npay.get('forward_per'))
+        if npay_forward is not None and npay_forward>0:
+            st.write(f'**Npay 별도 컨센서스 PER (기간 혼합 주의):** {npay_forward:.2f}배')
+            st.caption('Npay 제공 컨센서스 투자지표로, 연간 2026E·2027E 수치와 동일 기간이라고 간주하지 않습니다.')
         # The confirmed/current Npay ratios are shown above; keep other providers
         # explicitly separate rather than silently mixing different definitions.
         vals=[
