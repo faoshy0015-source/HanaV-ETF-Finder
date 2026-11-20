@@ -37,7 +37,7 @@ body{padding:13px 16px 22px;overscroll-behavior:none}button,input{font:inherit}b
   <button type="button" data-gun="moon" aria-pressed="false">🌙 달빛<small>정밀형 · 4</small></button>
 </div>
 <div class="touchlayer"><div class="joystick move" id="moveZone"><span class="jlabel">이동</span><div class="knob"></div></div><div class="joystick look" id="lookZone"><span class="jlabel">조준</span><div class="knob"></div></div><button class="act dash" id="dashBtn" type="button">💨 회피</button><button class="act reload" id="reloadBtn" type="button">🔄 장전</button><button class="act" id="fireBtn" type="button">🎯 발사</button></div>
-<div class="screen" id="screen"><div class="panel"><div class="eyebrow" id="eyebrow">🦎 GECKO RUSH DUEL</div><div class="gecko" id="heroGecko">🦎⚔️🦎</div><h1 id="heroTitle">친구와 <span>1:1 대결!</span></h1><p id="heroDesc">각자 아이패드에서 같은 주소를 열고 방 코드를 입력하면 실시간 게코 배틀을 즐길 수 있어요. <b>먼저 5승</b> 하면 우승!</p><div class="formarea" id="createJoin"><label class="fieldlabel" for="nameInput">게임에서 사용할 이름</label><input class="entry" id="nameInput" maxlength="12" placeholder="예: 소민, 유민" value="플레이어"><div class="formrow"><button class="largebtn" type="button" id="hostBtn">🏠 방 만들기</button><button class="largebtn alt" type="button" id="practiceBtn">🤖 혼자 연습</button></div><label class="fieldlabel" for="codeInput">방 코드로 참가하기</label><div class="formrow" style="grid-template-columns:1fr 1fr"><input class="entry" id="codeInput" autocomplete="off" inputmode="text" maxlength="6" placeholder="6자리 코드" style="text-transform:uppercase;font-weight:850;letter-spacing:3px"><button class="largebtn ghost" type="button" id="joinBtn">🚪 참가하기</button></div><div id="error" class="err" role="alert"></div><div class="tiprow">💡 같은 Wi-Fi 또는 서로 다른 인터넷에서도 연결을 시도합니다. 공용 WebRTC 연결 서비스가 필요하며, 일부 네트워크에서는 직접 연결이 제한될 수 있습니다.</div></div><div class="formarea" id="waitingPanel" style="display:none"><div class="eyebrow" id="waitLabel">상대방을 기다리는 중</div><div class="roomcode" id="waitCode">------</div><div class="waiting" id="waitText">다른 아이패드에서 이 코드를 입력하세요.</div><div class="formrow"><button class="largebtn" type="button" id="copyCodeBtn">📋 방 코드 복사</button><button class="largebtn ghost" type="button" id="copyLinkBtn">🔗 초대 링크 복사</button></div><button class="smallbtn" type="button" id="backMenuBtn">← 메인으로</button></div><div class="formarea" id="resultPanel" style="display:none"><p id="resultText">대결 종료</p><button class="largebtn" id="rematchBtn" type="button">🔁 다시 대결하기</button><div class="remark" id="rematchHint"></div><button class="smallbtn" style="margin-top:9px" id="resultLeaveBtn">나가기</button></div><div class="remark" id="controlsHelp">PC: WASD 이동 · 마우스 조준 · 클릭 발사 · 1~4 무기 전환 · R 장전 · Space 회피<br>아이패드: 왼쪽 이동 · 오른쪽 조준 · 위쪽 무기 4종 선택 · 가로 모드 권장</div></div></div>
+<div class="screen" id="screen"><div class="panel"><div class="eyebrow" id="eyebrow">🦎 GECKO RUSH DUEL</div><div class="gecko" id="heroGecko">🦎⚔️🦎</div><h1 id="heroTitle">친구와 <span>1:1 대결!</span></h1><p id="heroDesc">각자 아이패드에서 같은 주소를 열고 방 코드를 입력하면 실시간 게코 배틀을 즐길 수 있어요. <b>먼저 5승</b> 하면 우승!</p><div class="formarea" id="createJoin"><label class="fieldlabel" for="nameInput">게임에서 사용할 이름</label><input class="entry" id="nameInput" maxlength="12" placeholder="예: 소민, 유민" value="플레이어"><div class="formrow"><button class="largebtn" type="button" id="hostBtn">🏠 방 만들기</button><button class="largebtn alt" type="button" id="practiceBtn">🤖 혼자 연습</button></div><label class="fieldlabel" for="codeInput">방 코드로 참가하기</label><div class="formrow" style="grid-template-columns:1fr 1fr"><input class="entry" id="codeInput" autocomplete="off" inputmode="text" maxlength="6" placeholder="6자리 코드" style="text-transform:uppercase;font-weight:850;letter-spacing:3px"><button class="largebtn ghost" type="button" id="joinBtn">🚪 참가하기</button></div><div id="error" class="err" role="alert"></div><div class="tiprow">💡 같은 Wi-Fi 또는 서로 다른 인터넷에서도 연결을 시도합니다. 공용 WebRTC 연결 서비스가 필요하며, 일부 네트워크에서는 직접 연결이 제한될 수 있습니다.</div></div><div class="formarea" id="waitingPanel" style="display:none"><div class="eyebrow" id="waitLabel">상대방을 기다리는 중</div><div class="roomcode" id="waitCode">------</div><div class="waiting" id="waitText">다른 아이패드에서 이 코드를 입력하세요.</div><div class="formrow"><button class="largebtn" type="button" id="copyCodeBtn">📋 방 코드 복사</button><button class="largebtn ghost" type="button" id="copyLinkBtn">🔗 초대 링크 복사</button></div><button class="smallbtn" type="button" id="backMenuBtn">← 메인으로</button></div><div class="formarea" id="resultPanel" style="display:none"><p id="resultText">대결 종료</p><button class="largebtn" id="rematchBtn" type="button">🔁 다시 대결하기</button><div class="remark" id="rematchHint"></div><button class="smallbtn" style="margin-top:9px" id="resultLeaveBtn">나가기</button></div><div class="remark" id="controlsHelp">PC: WASD 이동 · 마우스 조준 · 클릭 발사 · 1~4 무기 전환 · R 장전 · Space 회피<br>아이패드: 왼쪽 이동 · 오른쪽 조준 · 위쪽 무기 4종 선택 · 가로 모드 권장 · 소리가 안 나면 🔊 버튼 확인</div></div></div>
 </div><div class="foot"><b>GECKO RUSH DUEL</b> · 가족용 웹게임 체험판 · 6자리 코드는 입장 편의용으로 별도의 비밀번호가 아닙니다 · 실명·개인정보는 입력하지 않아도 됩니다</div></div>
 <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.5/dist/peerjs.min.js"></script>
 <script>
@@ -82,7 +82,7 @@ function visible(a,b){const d=distance(a,b);return d<.1||ray(a.x,a.y,Math.atan2(
 const makePlayer=(seat,name)=>({seat,name,x:seat===0?4.5:16.5,y:seat===0?13.5:2.5,a:seat===0?-1.05:2.1,hp:100,gun:'leaf',mags:Object.fromEntries(GUN_ORDER.map(k=>[k,GUNS[k].mag])),ammo:12,reloading:0,shotCd:0,dashCd:0,iframes:0,flash:0,shots:0,walk:0,inp:{x:0,y:0,a:seat===0?-1.05:2.1,fire:false,dash:0,reload:0},lastDash:0,lastReload:0});
 let players=[makePlayer(0,'플레이어 1'),makePlayer(1,'플레이어 2')],wins=[0,0],round=1,phase='menu',phaseUntil=0,roundUntil=0,nowSec=0,notice='',noticeUntil=0,matchWinner=-1;
 let peer=null,conn=null,role='none',seat=0,roomCode='',peerName='플레이어',connected=false,networkReady=false,lastSnap=0,lastInput=0,online=true,roomToken=0;
-let localAngle=players[0].a,lastAppliedName='',fxKick=0,hitMark=0,damageFlash=0,soundOn=true,selectedGun='leaf';
+let localAngle=players[0].a,lastAppliedName='',fxKick=0,hitMark=0,damageFlash=0,soundOn=true,selectedGun='leaf',guestAudioSynced=false;
 const keys=Object.create(null),movement={x:0,y:0},look={x:0,y:0};let fireHeld=false,firePulse=0,dashPulse=0,reloadPulse=0,prevFirePulse=0;
 const printableError=(s)=>{const box=$('error');box.textContent=s;box.classList.add('show')};const clearError=()=>{$('error').classList.remove('show');$('error').textContent=''};
 function screen(panel){$('screen').classList.remove('hide');$('createJoin').style.display=panel==='menu'?'block':'none';$('waitingPanel').style.display=panel==='wait'?'block':'none';$('resultPanel').style.display=panel==='result'?'block':'none';}
@@ -90,9 +90,73 @@ function screenOff(){$('screen').classList.add('hide')}
 function stateLabel(t,ok=false){$('netstatus').textContent=t;$('netstatus').classList.toggle('ok',ok)}
 function announce(t,seconds=1.4){notice=t;noticeUntil=performance.now()/1000+seconds}
 function roleStatus(){return role==='host'?'방장':role==='guest'?'참가자':role==='practice'?'혼자 연습':'미접속'}
-function beep(freq=420,dur=.06){if(!soundOn)return;try{const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)return;const ac=beep.ctx||(beep.ctx=new Audio());if(ac.state==='suspended')ac.resume();const osc=ac.createOscillator(),gain=ac.createGain();osc.type='triangle';osc.frequency.value=freq;gain.gain.setValueAtTime(.035,ac.currentTime);gain.gain.exponentialRampToValueAtTime(.0001,ac.currentTime+dur);osc.connect(gain).connect(ac.destination);osc.start();osc.stop(ac.currentTime+dur)}catch(e){}}
+/* Built-in procedural audio: no external samples or paid sound service required. */
+let audioCtx=null,noiseBuffer=null;
+function unlockAudio(){
+  if(!soundOn)return;
+  try{
+    const Audio=window.AudioContext||window.webkitAudioContext;
+    if(!Audio)return;
+    if(!audioCtx){
+      audioCtx=new Audio();
+      noiseBuffer=audioCtx.createBuffer(1,Math.round(audioCtx.sampleRate*.6),audioCtx.sampleRate);
+      const data=noiseBuffer.getChannelData(0);
+      for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
+    }
+    if(audioCtx.state==='suspended'){const attempt=audioCtx.resume();if(attempt&&attempt.catch)attempt.catch(()=>{});}
+  }catch(err){/* device may block audio; gameplay remains available */}
+}
+function tone(from,to,duration,type='triangle',volume=.06,delay=0){
+  if(!soundOn||!audioCtx||audioCtx.state!=='running')return;
+  const ac=audioCtx,t=ac.currentTime+delay,osc=ac.createOscillator(),amp=ac.createGain();
+  osc.type=type;osc.frequency.setValueAtTime(Math.max(35,from),t);
+  osc.frequency.exponentialRampToValueAtTime(Math.max(35,to),t+duration);
+  amp.gain.setValueAtTime(.0001,t);
+  amp.gain.exponentialRampToValueAtTime(Math.max(.0002,volume),t+Math.min(.012,duration*.25));
+  amp.gain.exponentialRampToValueAtTime(.0001,t+duration);
+  osc.connect(amp).connect(ac.destination);osc.start(t);osc.stop(t+duration+.01);
+}
+function hiss(duration=.08,volume=.04,cutoff=1600,delay=0){
+  if(!soundOn||!audioCtx||audioCtx.state!=='running'||!noiseBuffer)return;
+  const ac=audioCtx,t=ac.currentTime+delay,source=ac.createBufferSource(),filter=ac.createBiquadFilter(),amp=ac.createGain();
+  source.buffer=noiseBuffer;filter.type='lowpass';filter.frequency.value=cutoff;
+  amp.gain.setValueAtTime(.0001,t);amp.gain.exponentialRampToValueAtTime(Math.max(.0002,volume),t+.006);
+  amp.gain.exponentialRampToValueAtTime(.0001,t+duration);
+  source.connect(filter).connect(amp).connect(ac.destination);source.start(t);source.stop(t+duration+.01);
+}
+function playSound(kind,gun='leaf',level=1){
+  if(!soundOn||!audioCtx||audioCtx.state!=='running')return;
+  const v=Math.max(.06,Math.min(1,level));
+  switch(kind){
+    case 'shot':
+      if(gun==='seed'){tone(650,230,.055,'square',.042*v);hiss(.040,.032*v,2900);}
+      else if(gun==='mango'){tone(220,65,.21,'sawtooth',.095*v);hiss(.19,.075*v,1100);}
+      else if(gun==='moon'){tone(1050,100,.24,'sawtooth',.062*v);tone(1400,350,.16,'sine',.038*v,.025);hiss(.085,.023*v,4400);}
+      else{tone(470,145,.12,'triangle',.085*v);hiss(.065,.038*v,1750);}
+      break;
+    case 'hit':tone(920,1250,.09,'sine',.065*v);tone(1350,780,.105,'triangle',.035*v,.04);break;
+    case 'hurt':tone(230,95,.19,'sawtooth',.074*v);hiss(.13,.032*v,620);break;
+    case 'reload':hiss(.09,.037*v,900);tone(300,500,.11,'triangle',.045*v,.08);tone(600,340,.07,'square',.025*v,.21);break;
+    case 'reloadDone':tone(520,830,.08,'sine',.035*v);break;
+    case 'switch':tone(340,610,.085,'triangle',.040*v);break;
+    case 'dash':hiss(.16,.050*v,1400);tone(280,520,.14,'sine',.029*v);break;
+    case 'start':tone(500,700,.11,'sine',.045*v);tone(760,1120,.18,'sine',.055*v,.12);break;
+    case 'victory':tone(523,523,.14,'sine',.07*v);tone(659,659,.14,'sine',.07*v,.15);tone(784,784,.35,'sine',.085*v,.30);break;
+    case 'defeat':tone(410,310,.22,'triangle',.060*v);tone(290,170,.30,'triangle',.05*v,.22);break;
+    case 'draw':tone(510,440,.22,'sine',.05*v);break;
+  }
+}
+function refreshSoundButton(){
+  const b=$('soundBtn');b.textContent=soundOn?'🔊':'🔇';
+  b.setAttribute('aria-label',soundOn?'효과음 끄기':'효과음 켜기');
+  b.title=soundOn?'효과음 켜짐 · 누르면 끄기':'효과음 꺼짐 · 누르면 켜기';
+}
+try{soundOn=localStorage.getItem('geckoRushSound')!=='off'}catch(err){}
+refreshSoundButton();
+document.addEventListener('pointerdown',unlockAudio,{capture:true,passive:true});
+document.addEventListener('keydown',unlockAudio,{capture:true});
 function send(x){if(conn&&conn.open){try{conn.send(x);return true}catch(e){return false}}return false}
-function safeDisconnect(){roomToken++;if(conn){try{conn.close()}catch(e){}conn=null}if(peer){try{peer.destroy()}catch(e){}peer=null}connected=false;networkReady=false;roomCode='';role='none';$('roomBadge').classList.remove('show');}
+function safeDisconnect(){guestAudioSynced=false;roomToken++;if(conn){try{conn.close()}catch(e){}conn=null}if(peer){try{peer.destroy()}catch(e){}peer=null}connected=false;networkReady=false;roomCode='';role='none';$('roomBadge').classList.remove('show');}
 function resetMenu(){selectedGun='leaf';paintGunButtons();safeDisconnect();phase='menu';wins=[0,0];round=1;players=[makePlayer(0,'플레이어 1'),makePlayer(1,'플레이어 2')];seat=0;localAngle=players[0].a;fireHeld=false;notice='';stateLabel('⚪ 연결 준비');$('eyebrow').textContent='🦎 GECKO RUSH DUEL';$('heroGecko').textContent='🦎⚔️🦎';$('heroTitle').innerHTML='친구와 <span>1:1 대결!</span>';$('heroDesc').textContent='각자 아이패드에서 같은 주소를 열고 방 코드를 입력하면 실시간 게코 배틀을 즐길 수 있어요. 먼저 5승 하면 우승!';screen('menu');clearError();}
 function linkForCode(code){const u=new URL(location.href);u.searchParams.set('room',code);u.hash='';return u.toString()}
 async function copyText(t){try{await navigator.clipboard.writeText(t);announce('복사 완료!',1.5)}catch(e){window.prompt('아래 내용을 복사해 주세요',t)}}
@@ -110,7 +174,7 @@ function applyInputLocal(){const p=players[seat];if(!p)return;const forward=(key
 function sendInput(){if(role!=='guest'||!connected)return;const i=applyInputLocal();send({t:'input',i});}
 function inputForHost(){const inp=applyInputLocal();players[0].inp=inp;}
 function hostStep(dt,now){nowSec=now;
- if(phase==='countdown'&&now>=phaseUntil){phase='playing';roundUntil=now+90;announce('⚔️ 대결 시작!',1.2);}
+ if(phase==='countdown'&&now>=phaseUntil){phase='playing';roundUntil=now+90;announce('⚔️ 대결 시작!',1.2);playSound('start');}
  if(phase==='roundOver'&&now>=phaseUntil){if(wins[0]>=5||wins[1]>=5){phase='matchOver';matchWinner=wins[0]>=5?0:1;showResult();}else{round++;resetRound();}}
  if(phase!=='playing')return;
  if(now>=roundUntil){const a=players[0].hp,b=players[1].hp;endRound(a>b?0:b>a?1:-1);return;}
@@ -126,9 +190,9 @@ function tickPlayer(p,dt,now){const inp=p.inp||{};p.a=Number.isFinite(inp.a)?inp
     p.reloading=0;p.needsAmmo=false;p.shotCd=Math.max(.14,p.shotCd);
  }
  const weapon=GUNS[p.gun];
- if(p.reloading===0&&p.needsAmmo){p.ammo=weapon.mag;p.mags[p.gun]=p.ammo;p.needsAmmo=false;}
- if(inp.reload!==p.lastReload){p.lastReload=inp.reload;if(p.ammo<weapon.mag&&!p.reloading){p.reloading=weapon.reload;p.needsAmmo=true}}
- if(inp.dash!==p.lastDash){p.lastDash=inp.dash;if(p.dashCd<=0){p.dashCd=3.1;p.iframes=Math.max(.19,p.iframes);let fx=inp.y||1,side=inp.x||0;let vx=Math.cos(p.a)*fx+Math.cos(p.a+Math.PI/2)*side,vy=Math.sin(p.a)*fx+Math.sin(p.a+Math.PI/2)*side;const m=Math.hypot(vx,vy)||1;for(let k=0;k<9;k++)moveBody(p,vx/m*.09,vy/m*.09)}}
+ if(p.reloading===0&&p.needsAmmo){p.ammo=weapon.mag;p.mags[p.gun]=p.ammo;p.needsAmmo=false;if(p.seat===seat)playSound('reloadDone');}
+ if(inp.reload!==p.lastReload){p.lastReload=inp.reload;if(p.ammo<weapon.mag&&!p.reloading){p.reloading=weapon.reload;p.needsAmmo=true;playSound('reload','leaf',p.seat===seat?1:.23)}}
+ if(inp.dash!==p.lastDash){p.lastDash=inp.dash;if(p.dashCd<=0){p.dashCd=3.1;playSound('dash','leaf',p.seat===seat?1:.22);p.iframes=Math.max(.19,p.iframes);let fx=inp.y||1,side=inp.x||0;let vx=Math.cos(p.a)*fx+Math.cos(p.a+Math.PI/2)*side,vy=Math.sin(p.a)*fx+Math.sin(p.a+Math.PI/2)*side;const m=Math.hypot(vx,vy)||1;for(let k=0;k<9;k++)moveBody(p,vx/m*.09,vy/m*.09)}}
  const speed=3.45,fy=clamp(Number(inp.y)||0,-1,1),sx=clamp(Number(inp.x)||0,-1,1),n=Math.max(1,Math.hypot(fy,sx));const vx=(Math.cos(p.a)*fy+Math.cos(p.a+Math.PI/2)*sx)/n,vy=(Math.sin(p.a)*fy+Math.sin(p.a+Math.PI/2)*sx)/n;moveBody(p,vx*speed*dt,vy*speed*dt);p.walk+=dt*Math.hypot(vx,vy)*7;
  if(inp.fire)fireShot(p,now);
  if(p.ammo===0&&!p.reloading){p.reloading=weapon.reload;p.needsAmmo=true}
@@ -136,7 +200,8 @@ function tickPlayer(p,dt,now){const inp=p.inp||{};p.a=Number.isFinite(inp.a)?inp
 function fireShot(p,now){
  if(phase!=='playing'||p.reloading>0||p.shotCd>0||p.ammo<=0)return;
  const gun=GUNS[p.gun];p.ammo--;p.mags[p.gun]=p.ammo;p.shotCd=gun.cooldown;p.flash=.13;p.shots++;
- if(p.seat===seat){fxKick=gun.spread.length>1?1.4:gun.damage>40?1.7:.75;beep(p.gun==='seed'?480:p.gun==='moon'?260:360,.055)}
+ if(p.seat===seat)fxKick=gun.spread.length>1?1.4:gun.damage>40?1.7:.75;
+  playSound('shot',p.gun,p.seat===seat?1:.27);
  const target=players[1-p.seat],d=distance(p,target),aim=Math.atan2(target.y-p.y,target.x-p.x);
  if(d>=gun.range||target.iframes>0||!visible(p,target))return;
  const tolerance=Math.atan2(gun.aim,d)+.009,offset=angDiff(aim,p.a);
@@ -144,13 +209,48 @@ function fireShot(p,now){
  if(!hits)return;
  const damage=Math.min(56,gun.damage*hits);
  target.hp=Math.max(0,target.hp-damage);target.iframes=.045;target.flash=.2;
- if(p.seat===seat){hitMark=.16;beep(800,.075)}
+ if(p.seat===seat){hitMark=.16;playSound('hit')}else if(target.seat===seat){damageFlash=.35;playSound('hurt')}
 }
 function botInput(dt,now){const bot=players[1],human=players[0],d=distance(bot,human),target=Math.atan2(human.y-bot.y,human.x-bot.x);bot.inp={x:Math.sin(now*1.1)*.4,y:d>4?1:d<2.5?-.5:0,a:target+Math.sin(now*.9)*.12,fire:d<10&&Math.sin(now*5)>-.2,dash:0,reload:0,weapon:d<4.3?'mango':d>10?'moon':'seed'};}
-function endRound(winner){if(phase!=='playing')return;if(winner>=0)wins[winner]++;phase='roundOver';phaseUntil=performance.now()/1000+2.8;announce(winner<0?'🤝 무승부!':`🏆 ${players[winner].name} 라운드 승리!`,2.3);beep(630,.16)}
+function endRound(winner){if(phase!=='playing')return;if(winner>=0)wins[winner]++;phase='roundOver';phaseUntil=performance.now()/1000+2.8;announce(winner<0?'🤝 무승부!':`🏆 ${players[winner].name} 라운드 승리!`,2.3);playSound(winner<0?'draw':winner===seat?'victory':'defeat')}
 function showResult(){const win=matchWinner===seat;$('eyebrow').textContent='🏆 5승 먼저 달성 · 대결 종료';$('heroGecko').textContent=win?'🏆🦎':'🦎✨';$('heroTitle').innerHTML=win?'축하해요! <span>우승!</span>':'정말 멋진 <span>대결!</span>';$('heroDesc').textContent=`${players[0].name} ${wins[0]} : ${wins[1]} ${players[1].name}`;$('resultText').textContent=win?'최고의 게코 챔피언!':'다음에는 내가 이긴다!';$('rematchBtn').textContent=role==='host'||role==='practice'?'🔁 다시 대결 시작':'🔁 방장에게 재대결 요청';$('rematchHint').textContent=role==='guest'?'방장이 다시 시작하면 모두 함께 새 경기를 시작합니다.':'두 플레이어가 같은 방에서 계속 대결할 수 있습니다.';screen('result')}
-function takeSnapshot(d){if(role!=='guest')return;if(!Array.isArray(d.p)||d.p.length!==2)return;const prev=players[1].hp,previousRound=round;const fixed=d.p.map((q,i)=>({seat:i,name:nameClean(q.n),x:clamp(Number(q.x)||1,1,MW-2),y:clamp(Number(q.y)||1,1,MH-2),a:Number(q.a)||0,hp:clamp(Number(q.hp)||0,0,100),ammo:clamp(Number(q.am)||0,0,30),gun:GUNS[q.g]?q.g:'leaf',reloading:Number(q.re)||0,dashCd:Number(q.dc)||0,flash:Number(q.fl)||0,walk:Number(q.w)||0}));players=fixed;if(prev>players[1].hp)damageFlash=.35;phase=d.ph;wins=Array.isArray(d.win)?d.win.slice(0,2):wins;round=Number(d.rd)||round;if(round!==previousRound)localAngle=players[1].a;roundUntil=performance.now()/1000+Math.max(0,Number(d.left)||0);phaseUntil=performance.now()/1000+Math.max(0,Number(d.phaseLeft)||0);if(d.message&&d.message!==lastAppliedName){lastAppliedName=d.message;announce(d.message,2.0)}if(phase==='matchOver'){matchWinner=Number(d.champ);if($('screen').classList.contains('hide'))showResult()}else if(phase!=='waiting')screenOff();if(phase==='countdown'&&d.phaseLeft>0){} }
-function snapshot(now){return {t:'snapshot',ph:phase,win:wins,rd:round,left:Math.max(0,roundUntil-now),phaseLeft:Math.max(0,phaseUntil-now),champ:matchWinner,message:phase==='roundOver'?notice:'',p:players.map(p=>({n:p.name,x:+p.x.toFixed(3),y:+p.y.toFixed(3),a:+p.a.toFixed(3),hp:p.hp,am:p.ammo,g:p.gun,re:+p.reloading.toFixed(2),dc:+p.dashCd.toFixed(2),fl:+p.flash.toFixed(2),w:+p.walk.toFixed(2)}))}}
+function takeSnapshot(d){
+  if(role!=='guest'||!Array.isArray(d.p)||d.p.length!==2)return;
+  const previous=players,previousRound=round,previousPhase=phase,previousWins=wins.slice();
+  const fixed=d.p.map((q,i)=>({
+    seat:i,name:nameClean(q.n),x:clamp(Number(q.x)||1,1,MW-2),y:clamp(Number(q.y)||1,1,MH-2),
+    a:Number(q.a)||0,hp:clamp(Number(q.hp)||0,0,100),ammo:clamp(Number(q.am)||0,0,30),
+    gun:GUNS[q.g]?q.g:'leaf',reloading:Number(q.re)||0,dashCd:Number(q.dc)||0,
+    flash:Number(q.fl)||0,walk:Number(q.w)||0,shots:Math.max(0,Number(q.sh)||0)
+  }));
+  players=fixed;
+  phase=d.ph;wins=Array.isArray(d.win)?d.win.slice(0,2):wins;round=Number(d.rd)||round;
+  const sameRound=guestAudioSynced&&round===previousRound;
+  if(sameRound){
+    if((phase==='playing'||phase==='roundOver')){
+      for(let i=0;i<2;i++){
+        if(fixed[i].shots>(previous[i].shots||0))playSound('shot',fixed[i].gun,i===seat?1:.27);
+      }
+    }
+    if(fixed[seat].hp<previous[seat].hp){damageFlash=.35;playSound('hurt')}
+    if(fixed[1-seat].hp<previous[1-seat].hp){hitMark=.16;playSound('hit')}
+    if(fixed[seat].reloading>0&&(previous[seat].reloading||0)<=0)playSound('reload');
+    if(fixed[seat].reloading<=0&&(previous[seat].reloading||0)>0)playSound('reloadDone');
+    if(fixed[seat].dashCd>2.8&&(previous[seat].dashCd||0)<=0)playSound('dash');
+  }
+  if(guestAudioSynced&&phase==='playing'&&previousPhase==='countdown')playSound('start');
+  if(guestAudioSynced&&phase==='roundOver'&&previousPhase==='playing'){
+    playSound(wins[seat]>previousWins[seat]?'victory':wins[1-seat]>previousWins[1-seat]?'defeat':'draw');
+  }
+  guestAudioSynced=true;
+  if(round!==previousRound)localAngle=players[seat].a;
+  roundUntil=performance.now()/1000+Math.max(0,Number(d.left)||0);
+  phaseUntil=performance.now()/1000+Math.max(0,Number(d.phaseLeft)||0);
+  if(d.message&&d.message!==lastAppliedName){lastAppliedName=d.message;announce(d.message,2.0)}
+  if(phase==='matchOver'){matchWinner=Number(d.champ);if($('screen').classList.contains('hide'))showResult()}
+  else if(phase!=='waiting')screenOff();
+}
+function snapshot(now){return {t:'snapshot',ph:phase,win:wins,rd:round,left:Math.max(0,roundUntil-now),phaseLeft:Math.max(0,phaseUntil-now),champ:matchWinner,message:phase==='roundOver'?notice:'',p:players.map(p=>({n:p.name,x:+p.x.toFixed(3),y:+p.y.toFixed(3),a:+p.a.toFixed(3),hp:p.hp,am:p.ammo,g:p.gun,re:+p.reloading.toFixed(2),dc:+p.dashCd.toFixed(2),fl:+p.flash.toFixed(2),w:+p.walk.toFixed(2),sh:p.shots}))}}
 function updateHud(now){const p=players[seat],top=$('roundClock');$('p0name').textContent=players[0].name;$('p1name').textContent=players[1].name;$('p0win').textContent=wins[0];$('p1win').textContent=wins[1];$('modeText').textContent=`${roleStatus()} · 라운드 ${round} · 5승 우승`;$('hpValue').textContent=`${p.hp} / 100`;$('hpFill').style.width=`${p.hp}%`;$('gunLabel').textContent=`${GUNS[p.gun||'leaf'].icon} ${GUNS[p.gun||'leaf'].name}`;$('ammoValue').innerHTML=`${p.reloading>0?'장전 중':p.ammo} <span>/ ${GUNS[p.gun||'leaf'].mag}</span>`;let left=phase==='playing'?roundUntil-now:phase==='countdown'?phaseUntil-now:0;top.textContent=phase==='playing'?`⏱ ${Math.ceil(Math.max(0,left))}초 · 서로 조준해서 발사!`:phase==='countdown'?`⏳ ${Math.max(1,Math.ceil(left))}초 후 시작`:phase==='roundOver'?'라운드 종료':phase==='matchOver'?'🏁 대결 종료':phase==='waiting'?'상대 기다리는 중':'방 만들기 또는 참가하기';$('announcement').textContent=phase==='countdown'?`⚔️ ${Math.max(1,Math.ceil(left))}`:noticeUntil>now?notice:'';$('reticle').classList.toggle('hit',hitMark>0);$('damage').classList.toggle('on',damageFlash>0);}
 // === Original-style lightweight 3D raycaster: no downloaded 3D assets ===
 function background(){const sky=ctx.createLinearGradient(0,0,0,H*.53);sky.addColorStop(0,'#091b38');sky.addColorStop(.7,'#174658');sky.addColorStop(1,'#2d8171');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H*.53);ctx.fillStyle='#d3fff7';ctx.beginPath();ctx.arc(W*.75,H*.18,31,0,TAU);ctx.fill();ctx.fillStyle='#0a39474b';for(let i=0;i<45;i++){const xx=(i*127)%W,yy=(i*73)%(H*.47);ctx.fillRect(xx,yy,2,2)}const floor=ctx.createLinearGradient(0,H*.5,0,H);floor.addColorStop(0,'#224a50');floor.addColorStop(1,'#071f2e');ctx.fillStyle=floor;ctx.fillRect(0,H*.5,W,H*.5);ctx.strokeStyle='#6ff6c021';ctx.lineWidth=2;for(let i=1;i<26;i++){const y=H*.5+Math.pow(i/26,1.7)*H*.5;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke()}for(let k=-12;k<13;k++){const x=W/2+k*W*.14;ctx.beginPath();ctx.moveTo(W/2+(x-W/2)*.06,H*.5);ctx.lineTo(x,H);ctx.stroke()}}
@@ -169,10 +269,10 @@ function frame(ms){const dt=Math.min(.04,(ms-last)/1000||.016),now=ms/1000;last=
  updateHud(now);draw();requestAnimationFrame(frame)}
 function active(){return ['countdown','playing','roundOver'].includes(phase)}
 function paintGunButtons(){document.querySelectorAll('#weaponbar [data-gun]').forEach(btn=>{const selected=btn.dataset.gun===selectedGun;btn.classList.toggle('active',selected);btn.setAttribute('aria-pressed',String(selected));});}
-function selectGun(id){if(!GUNS[id])return;selectedGun=id;paintGunButtons();inputChanged();if(active())announce(`${GUNS[id].icon} ${GUNS[id].name}`,1.0);}
+function selectGun(id){if(!GUNS[id])return;if(selectedGun!==id)playSound('switch');selectedGun=id;paintGunButtons();inputChanged();if(active())announce(`${GUNS[id].icon} ${GUNS[id].name}`,1.0);}
 
 function inputChanged(){if(role==='guest')sendInput();else if(role==='host'||role==='practice')inputForHost()}
-function fireOn(v){fireHeld=v;inputChanged();if(v)beep(380,.04)}
+function fireOn(v){fireHeld=v;inputChanged()}
 function reload(){reloadPulse++;inputChanged()}
 function dash(){dashPulse++;inputChanged()}
 function isTouch(){return matchMedia('(pointer:coarse)').matches}
@@ -181,7 +281,7 @@ stick('moveZone',movement);stick('lookZone',look);document.querySelectorAll('#we
 $('fireBtn').addEventListener('pointerdown',e=>{if(!active())return;e.preventDefault();$('fireBtn').setPointerCapture(e.pointerId);fireOn(true)});$('fireBtn').addEventListener('pointerup',()=>fireOn(false));$('fireBtn').addEventListener('pointercancel',()=>fireOn(false));$('reloadBtn').addEventListener('pointerdown',e=>{e.preventDefault();reload()});$('dashBtn').addEventListener('pointerdown',e=>{e.preventDefault();dash()});
 window.addEventListener('keydown',e=>{if(['Space','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.code))e.preventDefault();if(e.target&&['INPUT','TEXTAREA'].includes(e.target.tagName))return;keys[e.code]=true;if(e.repeat)return;if(e.code==='KeyR')reload();if(e.code==='Space')dash();if(/^Digit[1-4]$/.test(e.code))selectGun(GUN_ORDER[Number(e.code.slice(-1))-1]);});window.addEventListener('keyup',e=>{keys[e.code]=false});
 canvas.addEventListener('pointerdown',e=>{if(e.pointerType!=='mouse'||!active())return;fireOn(true);if(!isTouch()&&document.pointerLockElement!==canvas)canvas.requestPointerLock?.()});window.addEventListener('pointerup',e=>{if(e.pointerType==='mouse')fireOn(false)});document.addEventListener('mousemove',e=>{if(active()&&document.pointerLockElement===canvas)localAngle+=e.movementX*.003});window.addEventListener('blur',()=>{fireHeld=false;for(const k in keys)keys[k]=false;movement.x=movement.y=look.x=look.y=0;inputChanged()});
-$('hostBtn').addEventListener('click',()=>createRoom());$('joinBtn').addEventListener('click',joinRoom);$('codeInput').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom()});$('practiceBtn').addEventListener('click',()=>{safeDisconnect();role='practice';seat=0;peerName=nameClean($('nameInput').value);players=[makePlayer(0,peerName),makePlayer(1,'게코봇')];startMatch();stateLabel('🟢 혼자 연습',true)});$('leaveBtn').addEventListener('click',resetMenu);$('backMenuBtn').addEventListener('click',resetMenu);$('resultLeaveBtn').addEventListener('click',resetMenu);$('rematchBtn').addEventListener('click',()=>{if(role==='host'||role==='practice')startMatch();else send({t:'rematch'})});$('copyCodeBtn').addEventListener('click',()=>copyText(roomCode));$('copyLinkBtn').addEventListener('click',()=>copyText(linkForCode(roomCode)));$('roomBadge').addEventListener('click',()=>copyText(roomCode));$('soundBtn').addEventListener('click',()=>{soundOn=!soundOn;$('soundBtn').textContent=soundOn?'🔊':'🔇'});
+$('hostBtn').addEventListener('click',()=>createRoom());$('joinBtn').addEventListener('click',joinRoom);$('codeInput').addEventListener('keydown',e=>{if(e.key==='Enter')joinRoom()});$('practiceBtn').addEventListener('click',()=>{safeDisconnect();role='practice';seat=0;peerName=nameClean($('nameInput').value);players=[makePlayer(0,peerName),makePlayer(1,'게코봇')];startMatch();stateLabel('🟢 혼자 연습',true)});$('leaveBtn').addEventListener('click',resetMenu);$('backMenuBtn').addEventListener('click',resetMenu);$('resultLeaveBtn').addEventListener('click',resetMenu);$('rematchBtn').addEventListener('click',()=>{if(role==='host'||role==='practice')startMatch();else send({t:'rematch'})});$('copyCodeBtn').addEventListener('click',()=>copyText(roomCode));$('copyLinkBtn').addEventListener('click',()=>copyText(linkForCode(roomCode)));$('roomBadge').addEventListener('click',()=>copyText(roomCode));$('soundBtn').addEventListener('click',()=>{soundOn=!soundOn;try{localStorage.setItem('geckoRushSound',soundOn?'on':'off')}catch(err){}refreshSoundButton();if(soundOn){unlockAudio();playSound('switch')}});
 const invite=new URLSearchParams(location.search).get('room');if(invite&&/^[A-Z0-9]{6}$/i.test(invite)){$('codeInput').value=invite.toUpperCase();$('heroDesc').textContent='초대받은 방 코드가 입력되어 있어요. 이름을 입력하고 참가하기를 누르면 됩니다.'}
 paintGunButtons();stateLabel('⚪ 연결 준비');requestAnimationFrame(frame);
 })();
