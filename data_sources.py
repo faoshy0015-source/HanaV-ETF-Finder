@@ -258,13 +258,36 @@ def get_investor_flows(code, days=115):
 
 
 def _dart_get(api_key, endpoint, **params):
-    try:
-        response = requests.get(f'{DART}/{endpoint}', params={'crtfc_key':api_key, **params},headers=HEADERS,timeout=12)
-        response.raise_for_status()
-        obj = response.json()
-        return obj if obj.get('status') == '000' else {}
-    except Exception:
-        return {}
+    """Retry only transient network/server failures; do not retry quota/key errors.
+
+    Never expose a secret-bearing URL or substitute fictitious financial data.
+    """
+    for attempt in range(2):
+        try:
+            response = requests.get(
+                f'{DART}/{endpoint}',
+                params={'crtfc_key': api_key, **params},
+                headers=HEADERS, timeout=(4, 8),
+            )
+            if response.status_code in (429, 500, 502, 503, 504):
+                if attempt == 0:
+                    continue
+                return {}
+            response.raise_for_status()
+            obj = response.json()
+            if obj.get('status') == '000':
+                return obj
+            # DART 020 (quota), 010/011 (key), 013 (not filed) should not be retried.
+            if obj.get('status') == '800' and attempt == 0:
+                continue
+            return {}
+        except (requests.exceptions.Timeout, requests.exceptions.ConnectionError):
+            if attempt == 0:
+                continue
+            return {}
+        except (requests.exceptions.RequestException, ValueError, TypeError):
+            return {}
+    return {}
 
 
 def dart_disclosures(api_key, corp_code, days=95):
