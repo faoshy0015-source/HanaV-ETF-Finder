@@ -1158,8 +1158,10 @@ with t6:
             prevdata=json.loads(old.getvalue().decode('utf-8'))
             if str(prevdata.get('instrument',{}).get('code',''))!=resolved['code']:
                 st.error('업로드한 스냅샷과 현재 종목코드가 다릅니다.')
-            elif prevdata.get('version')!=1:
-                st.error('지원하지 않는 스냅샷 형식입니다.')
+            elif prevdata.get('version')==1:
+                st.warning('이전 파일은 뉴스 모멘텀이 포함된 구 배점 체계입니다. 현행 25/22/22/21/10 점수와 직접 비교할 수 없습니다. 새 점수 스냅샷을 저장한 뒤 비교하세요.')
+            elif prevdata.get('version')!=2 or prevdata.get('scoring_model')!='HanaV 5-domain 25/22/22/21/10':
+                st.error('지원하지 않는 스냅샷 형식 또는 평가 배점 체계입니다.')
             else:
                 old_score=number(prevdata.get('score'));new_score=scores['total']
                 if old_score is not None and new_score is not None:
