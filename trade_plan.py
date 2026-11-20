@@ -57,7 +57,6 @@ def conditional_trade_plan(scores, prices=None, target_summary=None, published_t
     frow=rows.get("수급",{})
     vrow=rows.get("밸류에이션",{})
     hrow=rows.get("재무건전성",{})
-    momentum=rows.get("뉴스 모멘텀",{})
     holder=[]
     newbuyer=[]
     checks=[]
@@ -98,7 +97,7 @@ def conditional_trade_plan(scores, prices=None, target_summary=None, published_t
         newbuyer.append("20·60거래일 추세 데이터 미확보로 진입 가격을 제시할 수 없습니다. 데이터 확보 후 시나리오를 재평가하세요.")
         checks.append("기술적: 가격 이력 또는 이동평균선 미확보")
 
-    if frow.get("score") is not None and (_num(frow.get("covered_weight")) or 0)>=9:
+    if frow.get("score") is not None and (_num(frow.get("covered_weight")) or 0)>=13.2:
         flow_score=_num(frow["score"])
         if flow_score is not None and flow_score<40:
             holder.append("거래대금·시총 보정 수급점수가 낮습니다. 외국인·기관 순매도 지속 여부와 거래대금 확대를 추가 점검하세요.")
@@ -109,7 +108,7 @@ def conditional_trade_plan(scores, prices=None, target_summary=None, published_t
     else:
         checks.append("수급: 거래대금 대비 순매수 강도 자료 충족 여부 확인 필요")
 
-    if vrow.get("score") is not None and (_num(vrow.get("covered_weight")) or 0)>=10:
+    if vrow.get("score") is not None and (_num(vrow.get("covered_weight")) or 0)>=11:
         val_score=_num(vrow.get("score"))
         if val_score is not None and val_score<40:
             holder.append("상대가치 점수가 낮습니다. 실적 상향이 주가에 선반영됐는지 경쟁사 PER 및 실적 추정 변화를 확인하세요.")
@@ -131,10 +130,9 @@ def conditional_trade_plan(scores, prices=None, target_summary=None, published_t
     else:
         checks.append("최근 리포트 목표가: 비교 가능한 증권사 표본 부족으로 미산출")
 
-    for key,label in ((hrow,"재무"),(momentum,"공시·뉴스")):
-        weight=_num(key.get("weight")) or 0
-        used=_num(key.get("covered_weight")) or 0
-        if used<weight:checks.append(f"{label}: {used:g}/{weight:g}점 배점만 검증 · 미산출 근거 확인")
+    weight=_num(hrow.get("weight")) or 0
+    used=_num(hrow.get("covered_weight")) or 0
+    if used<weight:checks.append(f"재무: {used:g}/{weight:g}점 배점만 검증 · 미산출 근거 확인")
     checks.append("실적: 다음 분기 매출·영업이익 예상치 변경과 실제 확정 공시 확인")
     checks.append("보유전략: 매입단가·비중·투자목적·허용손실에 따라 달라지므로 고객 정보 확인 후 판단")
 
