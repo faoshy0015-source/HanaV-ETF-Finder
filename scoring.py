@@ -5,10 +5,9 @@ import re
 import pandas as pd
 from valuation_model import evaluate_valuation
 from financial_health_model import evaluate_financial_health
-from event_momentum import evaluate_event_momentum
 from flow_model import evaluate_flow_normalized
 
-WEIGHTS = {'실적·성장성':25,'밸류에이션':20,'수급':15,'재무건전성':20,'주가 추세':10,'뉴스 모멘텀':10}
+WEIGHTS = {'실적·성장성':25,'밸류에이션':22,'수급':22,'재무건전성':21,'주가 추세':10}
 
 def number(v):
     try:
@@ -78,6 +77,40 @@ def score_record(label,points,parts,comments,confidence='보통'):
             'notes':comments,'confidence':confidence if parts else '미산출', 'tests':len(parts)}
 
 
+def _reweight_domain(model, target_weight):
+    """Express existing evidence-based subweights in the new domain allocation.
+
+    The submodels retain their independently validated relative weights.
+    Their coverage, earned points and components must all use the SAME scale
+    as the summary chart, otherwise 100-point coverage becomes misleading.
+    """
+    components=[dict(x) for x in model.get('components',[])]
+    source_weight=float(model.get('weight') or 0)
+    if source_weight<=0:
+        raise ValueError('Unweighted scoring model')
+    factor=float(target_weight)/source_weight
+    scaled=[]
+    for i,part in enumerate(components):
+        base=float(part.get('weight') or 0)
+        weight=(round(target_weight-sum(x['weight'] for x in scaled),2)
+                if i==len(components)-1 else round(base*factor,2))
+        old_covered=float(part.get('covered_weight') or 0)
+        covered=(weight if base>0 and old_covered>=base
+                 else min(weight,round(old_covered*factor,2)))
+        part['weight']=weight
+        part['covered_weight']=covered
+        score=number(part.get('score'))
+        part['earned']=round(covered*score/100,3) if score is not None and covered>0 else None
+        part['status']=('평가' if covered==weight and score is not None
+                        else '부분 평가' if covered>0 and score is not None else '미산출')
+        scaled.append(part)
+    used=round(sum(x['covered_weight'] for x in scaled),2)
+    earned=round(sum(x['earned'] or 0 for x in scaled),3)
+    return {**model,'weight':target_weight,'covered_weight':used,
+            'earned':earned,'score':round(100*earned/used,1) if used else None,
+            'components':scaled}
+
+
 def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
     profile=profile or {}; indicators=get_indicators(prices)
     results=[]
@@ -98,7 +131,7 @@ def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
         notes.append(f'최근 분기 영업이익 {qop/1e8:,.0f}억원 (직전 분기 {qopprev/1e8:,.0f}억원)')
     results.append(score_record('실적·성장성',0,tests,notes))
     # VALUATION: four weighted dimensions, each scored only with real data.
-    valuation=evaluate_valuation(profile,profile.get('__valuation_context') or {},annual)
+    valuation=_reweight_domain(evaluate_valuation(profile,profile.get('__valuation_context') or {},annual), WEIGHTS['밸류에이션'])
     val_notes=[valuation['note']]
     for part in valuation['components']:
         val_notes.append(f"{part['name']}: {part['status']} "
@@ -115,10 +148,10 @@ def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
         'components':valuation['components'],
         'available_points':valuation['earned']
     })
-    # FLOW: daily matched net turnover and market-cap normalization (15 pts).
+    # FLOW: relative KRX net turnover and market-cap normalization (22 pts).
     # A stock's absolute net buying amount is not comparable across companies.
-    normalized_flow=evaluate_flow_normalized(
-        flow, profile.get('__daily_turnover'), prices, profile.get('marketCap'))
+    normalized_flow=_reweight_domain(evaluate_flow_normalized(
+        flow, profile.get('__daily_turnover'), prices, profile.get('marketCap')), WEIGHTS['수급'])
     flow_notes=[normalized_flow['note']]
     for part in normalized_flow['components']:
         flow_notes.append(f"{part['name']}: {part['status']} "
@@ -136,7 +169,9 @@ def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
     # SOLVENCY: evaluate separate leverage, cash generation, interest cost,
     # and short-term liquidity evidence. Never award a full 20-weight for just
     # a single strong debt ratio or for bank capital based on industrial rules.
-    fin=evaluate_financial_health(annual,profile.get('__financial_context') or {},profile)
+    fin=_reweight_domain(
+        evaluate_financial_health(annual,profile.get('__financial_context') or {},profile),
+        WEIGHTS['재무건전성'])
     fin_notes=[fin['note']]
     for part in fin['components']:
         fin_notes.append(
@@ -165,24 +200,8 @@ def evaluate(prices, annual, quarterly, flow, news, profile, disclosures=None):
         rsi=indicators['rsi14'];tests.append((50 if rsi<30 or rsi>70 else 65,1))
         notes.append(f'RSI(14) {rsi:.1f} (극단 구간은 방향성 판단 주의)')
     results.append(score_record('주가 추세',0,tests,notes))
-    # NEWS/REGULATORY MOMENTUM: 6-point DART filings, 4-point corroborated
-    # title signals. Unverified events never become invented neutral scores.
-    momentum=evaluate_event_momentum(disclosures,news,
-                                      str(profile.get('__name__') or ''))
-    notes=[momentum['note']]
-    for item in momentum['components']:
-        notes.append(f"{item['name']}: {item['status']} "
-                     f"({item['covered_weight']:g}/{item['weight']}점 배점) · {item['evidence']}")
-    results.append({
-        'category':'뉴스 모멘텀','weight':WEIGHTS['뉴스 모멘텀'],
-        'covered_weight':momentum['covered_weight'],
-        'score':momentum['score'],'notes':notes,
-        'confidence':momentum['confidence'],
-        'tests':sum(1 for x in momentum['components'] if x['covered_weight']>0),
-        'components':momentum['components'],
-        'events':momentum['events'],
-        'available_points':momentum['earned'],
-    })
+    # News and DART filing titles remain available as unscored context.
+    # They are excluded from WEIGHTS and all overall score/coverage calculations.
 
     available=[r for r in results if r['score'] is not None and r.get('covered_weight',0)>0]
     covered=round(sum(r['covered_weight'] for r in available),1)
