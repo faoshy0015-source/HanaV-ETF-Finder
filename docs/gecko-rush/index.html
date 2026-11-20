@@ -195,7 +195,7 @@ function tickPlayer(p,dt,now){const inp=p.inp||{};p.a=Number.isFinite(inp.a)?inp
  if(inp.dash!==p.lastDash){p.lastDash=inp.dash;if(p.dashCd<=0){p.dashCd=3.1;playSound('dash','leaf',p.seat===seat?1:.22);p.iframes=Math.max(.19,p.iframes);let fx=inp.y||1,side=inp.x||0;let vx=Math.cos(p.a)*fx+Math.cos(p.a+Math.PI/2)*side,vy=Math.sin(p.a)*fx+Math.sin(p.a+Math.PI/2)*side;const m=Math.hypot(vx,vy)||1;for(let k=0;k<9;k++)moveBody(p,vx/m*.09,vy/m*.09)}}
  const speed=3.45,fy=clamp(Number(inp.y)||0,-1,1),sx=clamp(Number(inp.x)||0,-1,1),n=Math.max(1,Math.hypot(fy,sx));const vx=(Math.cos(p.a)*fy+Math.cos(p.a+Math.PI/2)*sx)/n,vy=(Math.sin(p.a)*fy+Math.sin(p.a+Math.PI/2)*sx)/n;moveBody(p,vx*speed*dt,vy*speed*dt);p.walk+=dt*Math.hypot(vx,vy)*7;
  if(inp.fire)fireShot(p,now);
- if(p.ammo===0&&!p.reloading){p.reloading=weapon.reload;p.needsAmmo=true}
+ if(p.ammo===0&&!p.reloading){p.reloading=weapon.reload;p.needsAmmo=true;playSound('reload','leaf',p.seat===seat?1:.23)}
 }
 function fireShot(p,now){
  if(phase!=='playing'||p.reloading>0||p.shotCd>0||p.ammo<=0)return;
