@@ -855,11 +855,33 @@ with t3:
     st.divider()
     vc1,vc2=st.columns(2)
     with vc1:
-        st.subheader('밸류에이션')
+        st.subheader('밸류에이션 · 실적 기준 분리')
+        # Keep forward estimates visibly separate from the KRX historical PER.
+        # Never silently replace an exchange value with a forecast (or vice versa).
+        st.caption('주가수익비율(PER)은 적용 EPS 기간에 따라 크게 달라집니다. 예상치와 KRX 확정 실적 지표를 구분해 확인하세요.')
+        for estimate_year in (current_year,current_year+1):
+            estimated=forecasts.get(estimate_year,forecasts.get(str(estimate_year),{}))
+            forward_val=number(estimated.get('current_price_per'))
+            estimate_eps=number(estimated.get('eps'))
+            st.write(
+                f'**{estimate_year}년(E) 예상 PER (Npay EPS 기준):** '
+                + (fmt(forward_val,'배',2) if forward_val is not None and forward_val>0 else '미확인')
+            )
+            if estimate_eps is not None and estimate_eps>0:
+                st.caption(
+                    f'Npay 예상 EPS {estimate_eps:,.0f}원 · '
+                    + ('동일 제공처 적용 시세 '
+                       + fmt(npay.get('quote_price'),'원',0)
+                       if number(npay.get('quote_price')) is not None
+                       else '적용 시세 미확인')
+                )
+        if not any(number(forecasts.get(yr,forecasts.get(str(yr),{})).get('current_price_per'))
+                   for yr in (current_year,current_year+1)):
+            st.info('연도별 예상 EPS/시세가 확인되지 않아 Forward PER을 산출하지 않았습니다. 외부 추정치를 임의로 대입하지 않습니다.')
         # The confirmed/current Npay ratios are shown above; keep other providers
         # explicitly separate rather than silently mixing different definitions.
         vals=[
-              ('PER (KRX 확인값)' if display_ratios['PER']['kind']=='krx' else 'PER (별도 산출값)',
+              ('PER (KRX 과거 실적 기준)' if display_ratios['PER']['kind']=='krx' else 'PER (과거 실적 · 별도 기준)',
                display_ratios['PER']['value'],'배'),
               ('Forward PER (Yahoo 추정 · 12M)',profile.get('forwardPE'),'배'),
               ('추정 EPS (Yahoo 추정 · 12M)',profile.get('forwardEps'),'원'),
@@ -871,7 +893,9 @@ with t3:
               ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
         for label,val,unit in vals:
             st.write(f'**{label}:** {won(val) if unit=="원" and "시가총액" in label else fmt(val,unit,0 if unit=="원" else 2)}')
-        st.caption('PER 출처: '+display_ratios['PER']['source']+' · PBR 출처: '+display_ratios['PBR']['source'])
+        st.caption('예상 PER 출처: Npay 연간 전망(E)·Npay 시세, 산식: 시세 ÷ 예상 EPS. '
+                   'KRX 실적 PER은 다른 회계기간·산출 시점의 값이므로 예상 PER과 일치하지 않아도 데이터 오류는 아닙니다.')
+        st.caption('과거 실적 PER 출처: '+display_ratios['PER']['source']+' · PBR 출처: '+display_ratios['PBR']['source'])
         st.caption('ROE·시가총액 출처(별도): '+str(profile.get('__valuation_source') or '확인 불가')+
                    ' · 수치마다 산정 시점과 회계 기준이 다를 수 있습니다.')
         if profile.get('__krx_marketcap_date'):
