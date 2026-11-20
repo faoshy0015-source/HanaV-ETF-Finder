@@ -353,15 +353,22 @@ def dart_financials(api_key, corp_code, years=5):
     year_list=list(range(curr.year-years, curr.year+1))
     tasks=[]
     for year in year_list:
-        tasks.append((year,'11011'))
-        if year >= curr.year-3:
+        # A report for the current FY is normally filed the following year.
+        # Skip this predictable no-data request during an active fiscal year.
+        if year < curr.year:
+            tasks.append((year,'11011'))
+        # Recent three years are sufficient for the interim trend chart.
+        if year >= curr.year-2:
             tasks += [(year,'11013'),(year,'11012'),(year,'11014')]
+    # Latest filings matter most. If the provider is slow they are requested first.
+    tasks.sort(key=lambda task: (task[0],task[1]),reverse=True)
     results={}
     def get_task(task):
         y,report=task
         data=_dart_get(api_key,'fnlttSinglAcnt.json',corp_code=corp_code,bsns_year=str(y),reprt_code=report)
         return task,data.get('list',[])
-    with ThreadPoolExecutor(max_workers=5) as pool:
+    # Avoid bursting 18 simultaneous/rapid DART calls on every cold deploy.
+    with ThreadPoolExecutor(max_workers=3) as pool:
         futures=[pool.submit(get_task,task) for task in tasks]
         for fut in as_completed(futures):
             try:
@@ -377,7 +384,7 @@ def dart_financials(api_key, corp_code, years=5):
         fy=_statement_values(subset(year,'11011'))
         if fy:
             annual.append({'period':str(year), **{k:v for k,v in fy.items() if not k.endswith('_ytd')}})
-        if year < curr.year-3: continue
+        if year < curr.year-2: continue
         q3_ytd=None
         for report,q in [('11013','Q1'),('11012','Q2'),('11014','Q3')]:
             d=_statement_values(subset(year,report))
