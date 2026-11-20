@@ -626,6 +626,523 @@ with t1:
         st.caption('52주 고·저는 기간 내 장중 최고가/최저가가 아닌 일별 종가 기준입니다. 시세는 실시간 체결가가 아닙니다.')
 
 with t2:
+    # Keep current-year interim statements visible without presenting them as
+    # audited/complete annual figures. OpenDART income amounts are 3-month values.
+    current_fiscal_year=datetime.now(ZoneInfo('Asia/Seoul')).year
+    st.subheader(f'{current_fiscal_year}년 공시 분기 실적')
+    current_quarters=(quarterly.loc[
+        quarterly['period'].astype(str).str.match(
+            rf'^{current_fiscal_year} Q[1-3]
+        for col in display.columns:
+            if col!='period': display[col]=pd.to_numeric(display[col],errors='coerce')/1e8
+        aliases={'period':'사업연도','revenue':'매출액','operating_profit':'영업이익','net_income':'당기순이익',
+                 'assets':'자산총계','liabilities':'부채총계','equity':'자본총계','operating_cash_flow':'영업현금흐름'}
+        st.dataframe(display.rename(columns=aliases).round(1),hide_index=True,use_container_width=True)
+        for label,frame in (('연간',annual),('분기',quarterly)):
+            if frame.empty:continue
+            cols=[x for x in ('revenue','operating_profit','net_income') if x in frame]
+            if not cols:continue
+            g=frame[['period',*cols]].copy().set_index('period')
+            for c in cols:g[c]=pd.to_numeric(g[c],errors='coerce')/1e8
+            st.subheader(f'{label} 실적 추이')
+            fig=go.Figure()
+            for c,cc in [('revenue','#db9158'),('operating_profit','#138c78'),('net_income','#9daa59')]:
+                if c in g:fig.add_trace(go.Scatter(x=g.index,y=g[c],mode='lines+markers',name=aliases[c],line=dict(color=cc,width=2)))
+            fig.update_layout(height=350,template='plotly_white',margin=dict(l=8,r=8,t=15,b=25),yaxis_title='억원',legend=dict(orientation='h',y=-.2))
+            st.plotly_chart(fig,use_container_width=True)
+        st.subheader('영업이익 시나리오 (컨센서스 아님)')
+        st.caption('확정 실적에 사용자가 지정한 성장률을 적용한 단순 민감도 계산입니다. 애널리스트 전망·시장 컨센서스가 아닙니다.')
+        if 'operating_profit' in annual:
+            valid=annual[['period','operating_profit']].dropna()
+            if not valid.empty:
+                last=valid.iloc[-1]
+                if last['operating_profit']>0:
+                    base_growth=st.slider('영업이익 성장률 가정 (%)',-60,100,10,5)
+                    low=float(last['operating_profit'])*(1+(base_growth-15)/100)
+                    mid=float(last['operating_profit'])*(1+base_growth/100)
+                    hi=float(last['operating_profit'])*(1+(base_growth+15)/100)
+                    s1,s2,s3=st.columns(3)
+                    s1.metric('보수 (-15%p)',won(low));s2.metric('기준 가정',won(mid));s3.metric('낙관 (+15%p)',won(hi))
+                    st.caption(f"산식: {last['period']}년 공시 영업이익 × (1 + 가정 성장률). 실제 다음 사업연도 전망치가 아닙니다.")
+                else:st.caption('기준 연간 영업이익이 0 이하이므로 단순 성장률 외삽을 제공하지 않습니다.')
+    if not quarterly.empty:
+        st.caption('분기 실적은 DART 당기 3개월 금액 사용. 4분기는 사업보고서 연간 금액에서 3분기 누적을 차감해 복원할 수 있는 경우만 표시합니다.')
+    st.subheader('재무건전성 검증 항목 (총 20점)')
+    financial_row=next(r for r in scores['rows'] if r['category']=='재무건전성')
+    financial_parts=financial_row.get('components',[])
+    if financial_parts:
+        st.dataframe(pd.DataFrame([{
+            '평가 항목':x['name'], '배점':x['weight'],
+            '검증 배점':x['covered_weight'],
+            '획득 점수':f"{x['earned']:.2f}" if x['earned'] is not None else '미산출',
+            '결과':x['status'],
+        } for x in financial_parts]),hide_index=True,use_container_width=True)
+        st.caption(f"실제 검증 {financial_row.get('covered_weight',0):g}/20점 배점 · "
+                   "영업현금흐름·이자보상·유동비율을 확인할 수 없으면 20점 전체를 채운 것으로 보지 않습니다.")
+        with st.expander('재무 항목 산식·데이터 출처'):
+            for x in financial_parts:
+                st.markdown(f"**{x['name']} · {x['status']} ({x['covered_weight']}/{x['weight']}점)**")
+                st.caption(x['evidence'])
+                st.caption('출처: '+x['source'])
+            if profile.get('__financial_context'):
+                c=profile['__financial_context']
+                st.caption(f"DART 상세 재무자료: {c.get('year','')}년 "
+                           f"{'연결' if c.get('fs_scope')=='CFS' else '별도'}")
+        st.caption('금융업(은행·증권·보험 등)은 제조업용 건전성 기준을 적용하지 않으며 전용 평가가 마련될 때까지 보류합니다.')
+
+with t3:
+    st.markdown('#### 네이버 금융(Npay) 기준 PER · EPS · PBR · BPS')
+    npay=naver_snapshot if isinstance(naver_snapshot,dict) else {}
+    npay_specs=[
+        ('PER',npay.get('per'),'배',2),
+        ('EPS',npay.get('eps'),'원',0),
+        ('PBR',npay.get('pbr'),'배',2),
+        ('BPS',npay.get('bps'),'원',0),
+        ('배당수익률',npay.get('dividend_yield'),'%',2),
+        ('주당배당금(DPS)',npay.get('dps'),'원',0),
+    ]
+    if any(number(value) is not None for _,value,_,_ in npay_specs):
+        npay_columns=st.columns(3)
+        for i,(label,value,unit,decimals) in enumerate(npay_specs):
+            with npay_columns[i%3]:
+                st.metric(label,fmt(value,unit,decimals)
+                          if number(value) is not None else '미확인')
+        st.caption(
+            '출처: 네이버 금융 Npay 모바일 투자지표 · 조회 요청시각 '
+            +str(npay.get('requested_at') or '미확인')
+            +(' · 시세 기준시각 '+str(npay['quote_time']) if npay.get('quote_time') else '')
+        )
+        st.caption(
+            '네이버 금융의 PER·EPS 및 PBR·BPS는 제공처의 실적·시세 반영 기준입니다. '
+            '연결/별도, 최근 결산·최근 4분기 적용 여부는 종목 및 제공처 갱신에 따라 다를 수 있습니다.'
+        )
+    else:
+        st.warning(
+            '네이버 금융 PER·EPS·PBR·BPS를 받지 못했습니다. '
+            '아래 KRX 지표는 별도 기준이므로 네이버 값으로 간주하지 않습니다.'
+        )
+        if npay.get('error'):
+            st.caption('Npay 조회 상태: '+str(npay['error']))
+    for note in (npay.get('warnings') or []):
+        st.caption('Npay 데이터 검증: '+str(note))
+
+    st.markdown('#### 연도별 컨센서스 전망 (당해연도·다음연도)')
+    forecasts=npay.get('annual_forecasts') or {}
+    current_year=datetime.now(ZoneInfo('Asia/Seoul')).year
+    forecast_rows=[]
+    missing_forecast_years=[]
+    for yr in (current_year,current_year+1):
+        row=forecasts.get(yr,forecasts.get(str(yr),{}))
+        has_eps=number(row.get('eps')) is not None
+        has_bps=number(row.get('bps')) is not None
+        if not (has_eps or has_bps):
+            status='원천 미확인'
+            missing_forecast_years.append(yr)
+        else:
+            status='확인됨' if has_eps and has_bps else '일부 확인'
+        forecast_rows.append({
+            '연도':str(yr)+'년(E)',
+            '예상 EPS(원)':row.get('eps'),
+            '예상 BPS(원)':row.get('bps'),
+            '현재가 기준 예상 PER(배)':row.get('current_price_per'),
+            '수신 상태':status,
+        })
+    st.dataframe(
+        pd.DataFrame(forecast_rows),hide_index=True,use_container_width=True,
+        column_config={
+            '예상 EPS(원)':st.column_config.NumberColumn(format='%.0f'),
+            '예상 BPS(원)':st.column_config.NumberColumn(format='%.0f'),
+            '현재가 기준 예상 PER(배)':st.column_config.NumberColumn(format='%.2f'),
+            '수신 상태':st.column_config.TextColumn('수신 상태'),
+        }
+    )
+    if missing_forecast_years:
+        st.warning(
+            ', '.join(str(yr)+'년(E)' for yr in missing_forecast_years)
+            + '의 예상 EPS/BPS를 현재 제공처 응답에서 확인하지 못했습니다. '
+              '자료 미제공 또는 응답 형식 차이일 수 있으며, 임의의 추정값을 넣지 않았습니다.'
+        )
+    st.caption(
+        '출처: Npay 연간 재무정보의 컨센서스(E) · '
+        '현재가 기준 예상 PER = 동일 제공처 조회 시세 ÷ 해당 연도 예상 EPS. '
+        '공식 연간 PER 집계치와 다를 수 있으며 EPS가 0 이하이면 산출하지 않습니다. '
+        + ('적용 주가 '+fmt(npay.get('quote_price'),'원',0)
+           if number(npay.get('quote_price')) is not None else '적용 주가 미확인')
+    )
+    st.caption('예상 EPS와 BPS는 서로 다른 지표이며, 컨센서스와 주가 변동에 따라 변경됩니다.')
+
+    krx_date=str(valuation_context.get('date') or '')
+    krx_specs=[
+        ('PER',valuation_context.get('krx_per'),'배',2),
+        ('EPS',valuation_context.get('krx_eps'),'원',0),
+        ('PBR',valuation_context.get('krx_pbr'),'배',2),
+        ('BPS',valuation_context.get('krx_bps'),'원',0),
+        ('배당수익률',valuation_context.get('krx_dividend_yield'),'%',2),
+        ('주당배당금(DPS)',valuation_context.get('krx_dps'),'원',0),
+    ]
+    with st.expander('📚 한국거래소(KRX) 투자지표 · 다른 집계 기준과 비교',expanded=False):
+        if krx_date and any(number(v) is not None for _,v,_,_ in krx_specs):
+            krx_columns=st.columns(3)
+            for i,(label,value,unit,decimals) in enumerate(krx_specs):
+                with krx_columns[i%3]:
+                    st.metric(label,fmt(value,unit,decimals)
+                              if number(value) is not None else '미확인')
+            st.caption(
+                '출처: KRX/pykrx · 기준일 '+krx_date
+                +' · 다른 실적 기간·회계 기준의 투자지표이므로 '
+                '네이버 수치와 직접 대체하거나 조합할 수 없습니다.'
+            )
+        else:
+            st.info('KRX 투자지표를 조회하지 못했습니다.')
+            for error in valuation_context.get('errors') or []:
+                st.caption('KRX 조회 상태: '+str(error))
+    st.caption('Npay의 추정 PER·추정 EPS는 확정 실적 기반 PER·EPS와 별도 지표입니다.')
+    st.divider()
+    vc1,vc2=st.columns(2)
+    with vc1:
+        st.subheader('밸류에이션')
+        # The confirmed/current Npay ratios are shown above; keep other providers
+        # explicitly separate rather than silently mixing different definitions.
+        vals=[
+              ('PER (KRX 확인값)' if display_ratios['PER']['kind']=='krx' else 'PER (별도 산출값)',
+               display_ratios['PER']['value'],'배'),
+              ('Forward PER (Yahoo 추정 · 12M)',profile.get('forwardPE'),'배'),
+              ('추정 EPS (Yahoo 추정 · 12M)',profile.get('forwardEps'),'원'),
+              ('PBR (KRX 확인값)' if display_ratios['PBR']['kind']=='krx' else 'PBR (별도 산출값)',
+               display_ratios['PBR']['value'],'배'),
+              ('ROE (DART 간이)' if profile.get('__roe_approx') else 'ROE (외부 제공)',
+               (number(profile.get('returnOnEquity')) or 0)*100
+               if profile.get('returnOnEquity') is not None else None,'%'),
+              ('시가총액 (외부 제공 또는 KRX)',profile.get('marketCap'),'원')]
+        for label,val,unit in vals:
+            st.write(f'**{label}:** {won(val) if unit=="원" and "시가총액" in label else fmt(val,unit,0 if unit=="원" else 2)}')
+        st.caption('PER 출처: '+display_ratios['PER']['source']+' · PBR 출처: '+display_ratios['PBR']['source'])
+        st.caption('ROE·시가총액 출처(별도): '+str(profile.get('__valuation_source') or '확인 불가')+
+                   ' · 수치마다 산정 시점과 회계 기준이 다를 수 있습니다.')
+        if profile.get('__krx_marketcap_date'):
+            st.caption('시가총액 원천: 한국거래소 통계정보 (KRX OPEN API)')
+            classes=profile.get('__krx_share_classes',[])
+            st.caption('KRX 시가총액 기준일: '+profile['__krx_marketcap_date']+
+                       (' · 합산 주식코드: '+', '.join(map(str,classes)) if classes else ''))
+        if profile.get('__valuation_approx_note'):
+            st.warning(profile['__valuation_approx_note'])
+        if profile.get('__roe_approx_note'):
+            st.caption('간이 ROE 참고: '+profile['__roe_approx_note'])
+        if display_ratios['PER']['value'] is None or display_ratios['PBR']['value'] is None:
+            st.info('KRX 투자지표와 Yahoo/KIS·DART 대체 지표에서도 PER·PBR 일부를 확인하지 못했습니다. '
+                    '조회 기준일과 원천 데이터 상태를 확인하세요. 누락값은 임의로 채우지 않습니다.')
+        if krx_valuation_error:
+            st.caption('KRX 조회 상태: '+krx_valuation_error)
+        st.caption('Yahoo Finance 제공 지표는 결측/지연 가능. Forward PER은 제공처 추정치이며 공식 증권사 컨센서스 검증을 대체하지 않습니다.')
+        st.markdown('#### 밸류에이션 점수 구성 (총 20점)')
+        valuation_row=next(r for r in scores['rows'] if r['category']=='밸류에이션')
+        components=valuation_row.get('components',[])
+        if components:
+            st.dataframe(pd.DataFrame([{
+                '비교 영역':part['name'],
+                '배점':part['weight'],
+                '반영 배점':part['covered_weight'],
+                '획득 점수':f"{part['earned']:.2f}" if part['earned'] is not None else '미산출',
+                '진행':part['status'],
+            } for part in components]),hide_index=True,use_container_width=True)
+            st.caption(f"실제 평가 {valuation_row.get('covered_weight',0):g}/20점 배점 · "
+                       "누락된 세부 항목은 0점 또는 중립점으로 대체하지 않습니다.")
+            with st.expander('각 항목 평가 근거 · 필요한 데이터'):
+                for part in components:
+                    st.markdown(f"**{part['name']} ({part['weight']}점) · {part['status']}**")
+                    st.caption(part['evidence'])
+                    st.caption('출처/산식: '+part['source'])
+        if valuation_context.get('date'):
+            st.caption('비교 데이터 기준일: '+valuation_context['date']+
+                       (' · KRX 업종: '+str(valuation_context['sector_name'])
+                        if valuation_context.get('sector_name') else ''))
+        if valuation_context.get('errors'):
+            st.caption('조회 참고: '+'; '.join(valuation_context['errors'][:3]))
+        if valuation_context.get('historical_per') or valuation_context.get('historical_pbr'):
+            fig=go.Figure()
+            for key,label,color in [('historical_per','과거 월별 PER','#138c78'),
+                                    ('historical_pbr','과거 월별 PBR','#e87d31')]:
+                vals_hist=valuation_context.get(key) or []
+                if vals_hist:
+                    fig.add_trace(go.Box(y=vals_hist,name=label,boxpoints=False,
+                                         marker_color=color))
+            fig.update_layout(template='plotly_white',height=280,
+                              margin=dict(l=0,r=0,t=15,b=5),
+                              yaxis_title='PER·PBR (배, 서로 다른 척도)')
+            st.plotly_chart(fig,use_container_width=True)
+            st.caption('박스그래프는 과거 값의 분포입니다. PER과 PBR의 배수 크기는 직접 비교하지 마세요.')
+        st.caption('평가기준: 업종 PER 비교 6점 + 과거 밴드 5점 + 최근 3개년 ROE 지속성 5점 + '
+                   '동기준 Forward PER 4점. ROE 5점은 PER과 동치인 PBR/ROE 역산을 제거하고 '
+                   '장기 수익의 안정성을 측정합니다. '
+                   '전망 컨센서스 제공처가 없으면 Forward PER 4점은 평가에서 제외됩니다.')
+    with vc2:
+        st.subheader('외국인·기관 순매수')
+        if flows.empty:st.warning('KRX 수급 정보 미수신. 해당 항목은 총점 계산에서 제외됩니다.')
+        else:
+            ff=flows.tail(60)/1e8
+            f=go.Figure()
+            for name,color in [('외국인','#138c78'),('기관','#e8a15e')]:
+                f.add_trace(go.Bar(x=ff.index,y=ff[name],name=name,marker_color=color))
+            f.update_layout(barmode='relative',template='plotly_white',height=340,
+                            yaxis_title='일별 순매수 (억원)',margin=dict(l=5,r=5,t=10,b=10),legend=dict(orientation='h',y=-.18))
+            st.plotly_chart(f,use_container_width=True)
+            for d in (5,20,60):
+                if len(flows)>=d:
+                    fnet=float(flows['외국인'].tail(d).sum()); inet=float(flows['기관'].tail(d).sum())
+                    st.caption(f'{d}거래일: 외국인 {won(fnet)} / 기관 {won(inet)}')
+            st.caption('순매수 단위는 원입니다. KRX 조회 가능 범위에 따라 데이터가 달라질 수 있습니다.')
+        flow_row=next(row for row in scores['rows'] if row['category']=='수급')
+        st.markdown('#### 시가총액·거래대금 보정 수급점수 (15점)')
+        flow_parts=flow_row.get('components',[])
+        if flow_parts:
+            st.dataframe(pd.DataFrame([{
+                '세부 평가':part['name'],'배점':part['weight'],
+                '반영 배점':part['covered_weight'],
+                '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
+            } for part in flow_parts]),hide_index=True,use_container_width=True)
+            st.caption(f"평가된 배점 {flow_row.get('covered_weight',0):g}/15점 · "
+                       "같은 날짜의 거래대금·시총을 기준으로 순매수 규모를 정규화합니다.")
+            with st.expander('순매수 강도 계산 근거'):
+                for part in flow_parts:
+                    st.markdown(f"**{part['name']} ({part['covered_weight']}/{part['weight']}점 배점)**")
+                    st.caption(part['evidence'])
+                    st.caption('출처: '+part['source'])
+                st.caption('외국인+기관 순매수는 일별 KRX 거래대금 기준. '
+                           '공식 거래대금이 없을 경우 종가×거래량 근사치를 사용하고 명시합니다. '
+                           '시총은 보통주 기준일 수 있으며 미수신 항목은 점수에서 제외됩니다.')
+
+with t4:
+    st.subheader('공시·뉴스 기반 이벤트 모멘텀')
+    event_row=next(r for r in scores['rows'] if r['category']=='뉴스 모멘텀')
+    parts=event_row.get('components',[])
+    if parts:
+        st.dataframe(pd.DataFrame([{
+            '구성':part['name'],'배점':part['weight'],
+            '검증 배점':part['covered_weight'],
+            '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
+            '판정':part['status'],
+        } for part in parts]),hide_index=True,use_container_width=True)
+        st.caption(f"검증 {event_row.get('covered_weight',0):g}/10점 배점. "
+                   "공시 제목(6점)과 서로 다른 매체의 최근 뉴스 제목(4점)으로만 평가합니다. "
+                   "기사 본문을 읽거나 이벤트의 재무영향을 검증하지 않은 낮은 신뢰도의 참고 지표입니다.")
+        with st.expander('모멘텀 평가 근거와 한계'):
+            for part in parts:
+                st.markdown(f"**{part['name']} · {part['status']}**")
+                st.caption(part['evidence'])
+    events=event_row.get('events',[])
+    if events:
+        st.markdown('**탐지된 주요 이벤트 (원문 바로가기)**')
+        for item in sorted(events,key=lambda event:event.get('date',''),reverse=True)[:12]:
+            link=str(item.get('link',''))
+            title=str(item.get('title',''))
+            if link.startswith(('https://','http://')):
+                st.markdown(f"[{title}]({link})")
+            else:
+                st.write(title)
+            st.caption(f"{item.get('date','')} · {item.get('source','')} · "
+                       f"{item.get('type','')} | {item.get('reason','')}")
+    else:
+        st.info('평가 가능한 주요 이벤트가 확인되지 않았습니다. 이는 호재나 악재가 없다는 확정 판단이 아닙니다.')
+    st.divider()
+    st.subheader('최근 뉴스')
+    if news.empty:st.info('뉴스 RSS 조회 결과가 없습니다. DART 공시 이벤트는 별도로 평가될 수 있습니다.')
+    else:
+        for _,item in news.head(16).iterrows():
+            link=str(item.get('link',''))
+            title=str(item.get('title',''))
+            source=str(item.get('source',''))
+            if link.startswith(('http://','https://')):st.markdown(f'[{title}]({link})')
+            else:st.write(title)
+            st.caption(f'{source} · {item.get("date","")}')
+        st.caption('기사 제목은 단서일 뿐입니다. 맥락·오보·중복 기사·금액 규모는 평가하지 못하므로 반드시 원문을 확인하세요.')
+    st.divider()
+    st.subheader('OpenDART 주요 공시')
+    if disclosures.empty:st.info('최근 조회 가능한 공시가 없거나 DART 키가 설정되지 않았습니다.')
+    else:
+        for _,d in disclosures.head(30).iterrows():
+            no=str(d.get('rcept_no',''))
+            title=str(d.get('report_nm',''))
+            date=str(d.get('rcept_dt',''))
+            st.markdown(f'[{title}](https://dart.fss.or.kr/dsaf001/main.do?rcpNo={no})  ·  {date}')
+
+with t5:
+    st.subheader('최근 애널리스트 리포트')
+    st.caption('선택한 종목의 증권사 리포트를 코드로 조회합니다. 제목을 누르면 출처의 상세 페이지에서 원문을 확인할 수 있습니다.')
+    st.link_button(f"📑 {resolved['name']} 종목 리포트 직접 보기 (Npay 증권)",
+                   NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
+    st.markdown('#### EQUITY 골드회원 리서치')
+    st.link_button('🔎 EQUITY 골드회원 종목 리포트 검색',
+                   'https://www.equity.co.kr/reports/company',
+                   help='EQUITY에서 별도 로그인한 뒤 종목명 또는 종목코드로 검색합니다.',
+                   use_container_width=True)
+    st.caption(
+        f"EQUITY 사이트에서 로그인 후 '{resolved['name']}'"
+        f" ({resolved['code']})를 검색하세요. 계정정보를 Stock Analyzer에 입력하지 않으며, "
+        "유료 리포트를 자동 수집·저장·재배포하지 않습니다. "
+        "공식 데이터 제공 허가가 확인되기 전까지 검색 링크로만 연결합니다."
+    )
+    st.markdown('#### 최근 목표주가 집계')
+    if target_summary['average'] is not None:
+        cc1,cc2,cc3=st.columns(3)
+        cc1.metric('최근 리포트 평균 목표주가',f"{target_summary['average']:,.0f}원")
+        cc2.metric('현재 기준 가격 대비',
+                   f"{target_summary['upside_pct']:+.2f}%" if target_summary['upside_pct'] is not None else '—')
+        cc3.metric('반영 증권사',f"{target_summary['count']}곳")
+        st.dataframe(pd.DataFrame([{
+            '증권사':item['broker'],'발행일':item['date'],
+            '목표주가(원)':item['target'],'제목':item['title'],'원문':item['url'],
+        } for item in target_summary['rows']]),
+            column_config={'원문':st.column_config.LinkColumn('원문 리포트')},
+            hide_index=True,use_container_width=True)
+        st.caption(f"목표주가 범위 {target_summary['min']:,.0f}~{target_summary['max']:,.0f}원 · "
+                   '최근 90일, 증권사별 가장 최근 리포트 1건만 반영한 단순 산술평균입니다. '
+                   '서로 다른 증권사 2곳 이상 기준이며, 수익률이나 적정가치를 보장하지 않습니다.')
+    elif published_target:
+        st.metric('Npay 제공 목표주가 컨센서스 (별도 집계)',
+                  f"{published_target['target']:,.0f}원",
+                  f"{published_target['upside_pct']:+.2f}%" if published_target.get('upside_pct') is not None else None)
+        st.caption(f"기준일 {published_target['date']} · 최근 리포트의 증권사별 산술평균이 아닙니다. "
+                   "집계 표본과 기준기간은 제공처가 명시하지 않아 확인할 수 없습니다.")
+    else:
+        st.info('목표주가 숫자가 확인된 최근 리포트 2개 증권사 이상이 없어 '
+                '평균 목표주가를 산출할 수 없습니다.')
+        if published_target_error:st.caption('제공처 집계 확인: '+published_target_error)
+    st.divider()
+    if analyst_reports.empty:
+        st.info('이 종목의 리포트를 자동 조회하지 못했습니다. 위 종목 전용 Npay 리서치 링크에서 직접 확인할 수 있습니다.')
+        if analyst_error:st.caption(analyst_error)
+    else:
+        st.caption(f"최근 6개월 내 확인된 기업 리포트 {len(analyst_reports)}건 · 발행일 최신순")
+        for _,report_row in analyst_reports.iterrows():
+            rpt_title=str(report_row['title'])
+            rpt_link=str(report_row['url'])
+            rpt_date=str(report_row['date'])
+            rpt_broker=str(report_row['broker'] or '발행기관 미표기')
+            rpt_analyst=str(report_row['analyst'] or '')
+            rpt_target=str(report_row['target_price'] or '')
+            rpt_source=str(report_row.get('source','') or '')
+            if rpt_link.startswith(('https://','http://')):
+                st.link_button(f"📄 {rpt_title}",rpt_link,help='원문 제공 사이트에서 열기',use_container_width=True)
+            else:
+                st.write(rpt_title)
+            rpt_detail=f"발행 {rpt_date} · {rpt_broker}" + (f" · {rpt_source}" if rpt_source else '')
+            if rpt_analyst:rpt_detail+=f" · {rpt_analyst}"
+            if rpt_target:rpt_detail+=f" · 목표주가 {rpt_target}"
+            st.caption(rpt_detail)
+        st.caption('발행일·목표가·투자의견은 원문 작성 시점의 판단입니다. 최신 데이터·분할조정 여부는 원문에서 확인하세요.')
+    st.divider()
+    st.markdown('**전체 리포트 출처에서 직접 검색**')
+    col_hk,col_nv=st.columns(2)
+    col_hk.link_button('한경 컨센서스 리포트 검색',HANKYUNG_PORTAL,use_container_width=True)
+    col_nv.link_button('Npay 증권 리서치',NAVER_ITEM_RESEARCH.format(code=resolved['code']),use_container_width=True)
+    st.caption('보고서의 PDF를 앱 서버에 저장하거나 재배포하지 않습니다. 자동 수집 실패 시 원문 제공처에서 종목명을 검색하세요.')
+
+with t6:
+    st.subheader('저장 · 고객 설명용 리포트')
+    st.caption('인쇄용 HTML에는 주가·점수 그래프와 보유자/신규 검토자별 조건부 전략이 포함됩니다. '
+               'PNG는 한 장짜리 요약 이미지이며, JSON은 그림이 아닌 과거 분석 기록입니다.')
+    final_text=explain(scores)
+    source_map={'price':('KIS REST 시세 + '+price_source) if kis_snapshot else (price_source or '연동 없음'),
+                'financial':f'OpenDART {fs_scope}' if not annual.empty else '연동 없음',
+                'flows':'KRX(pykrx)' if not flows.empty else '연동 없음',
+                'news':'Google News RSS + OpenDART 공시 이벤트' if not news.empty or not disclosures.empty else '연동 없음'}
+    price_for_report=kis_snapshot.get('price',price)
+    report_stamp=(f'KIS 조회(KST) {datetime.now(ZoneInfo("Asia/Seoul")).strftime("%Y-%m-%d %H:%M")}'
+                  f' / 일별 종가 {price_date}' if kis_snapshot else price_date)
+    trade_plan=conditional_trade_plan(scores,prices,target_summary,published_target)
+    html=render_html(resolved,scores,final_text,price_for_report,report_stamp,source_map,
+                     target_summary=target_summary,published_target=published_target,
+                     prices=prices,trade_plan=trade_plan)
+    with st.expander('보고서에 포함되는 보유자·신규 매수 검토 전략 보기',expanded=False):
+        p1,p2=st.columns(2)
+        with p1:
+            st.markdown('**기존 보유자 관점**')
+            for line in trade_plan['holder']:st.write('• '+line)
+        with p2:
+            st.markdown('**신규 매수 검토자 관점**')
+            for line in trade_plan['new_buyer']:st.write('• '+line)
+        st.markdown('**주요 체크포인트**')
+        for line in trade_plan['checkpoints']:st.write('• '+line)
+        st.caption(trade_plan['disclaimer'])
+    try:
+        summary_png=png_summary(resolved,scores,price_for_report,report_stamp,
+                                prices=prices,plan=trade_plan,
+                                target_summary=target_summary,published_target=published_target)
+    except (ImportError,OSError,ValueError,TypeError) as exc:
+        summary_png=None
+        st.warning(f'PNG 생성에 실패했습니다: {type(exc).__name__}. '
+                   '인쇄용 HTML과 JSON은 정상적으로 내려받을 수 있습니다.')
+    c1,c2=st.columns(2)
+    c1.download_button('📄 차트·전략 포함 인쇄용 HTML',html,
+                       file_name=f'StockAnalyzer_Proposal_{resolved["code"]}.html',
+                       mime='text/html',use_container_width=True)
+    if summary_png:
+        c2.download_button('🖼️ 한 장 요약 이미지 PNG',summary_png,
+                           file_name=f'StockAnalyzer_Summary_{resolved["code"]}.png',
+                           mime='image/png',use_container_width=True)
+        with st.expander('한 장 요약 이미지 미리보기',expanded=False):
+            st.image(summary_png,caption='PNG 요약: 주요 지표·정량점수·주가·조건부 전략',
+                     use_container_width=True)
+    else:
+        c2.button('🖼️ 한 장 요약 이미지 PNG 생성 불가',disabled=True,use_container_width=True)
+    c3,c4=st.columns(2)
+    c3.download_button('🗂️ 점수 기록 JSON (과거 비교용)',
+                       snapshot(resolved,scores,price_date),
+                       file_name=f'StockAnalyzer_Snapshot_{resolved["code"]}.json',
+                       mime='application/json',use_container_width=True)
+    c4.download_button('📋 평가 근거 CSV',
+                       score_df[['category','weight','score','confidence']].to_csv(index=False).encode('utf-8-sig'),
+                       file_name=f'StockAnalyzer_Scores_{resolved["code"]}.csv',
+                       mime='text/csv',use_container_width=True)
+    st.caption('HTML은 브라우저에서 열어 인쇄 또는 PDF로 저장하세요. SVG 차트는 HTML 안에 포함되어 '
+               '오프라인에서도 보입니다. 외부 고객 제공 전 자료 이용권한과 내부 준법 절차를 확인하세요.')
+    st.divider()
+    st.subheader('이전 분석과 점수 변화 비교')
+    old=st.file_uploader('이전에 내려받은 점수 스냅샷 JSON을 업로드하세요',type=['json'])
+    if old is not None:
+        try:
+            prevdata=json.loads(old.getvalue().decode('utf-8'))
+            if str(prevdata.get('instrument',{}).get('code',''))!=resolved['code']:
+                st.error('업로드한 스냅샷과 현재 종목코드가 다릅니다.')
+            elif prevdata.get('version')!=1:
+                st.error('지원하지 않는 스냅샷 형식입니다.')
+            else:
+                old_score=number(prevdata.get('score'));new_score=scores['total']
+                if old_score is not None and new_score is not None:
+                    st.metric('종합 점수 변화',fmt(new_score,'점'),f'{new_score-old_score:+.1f}점')
+                if prevdata.get('coverage')!=scores['coverage']:
+                    st.warning(f"이전 충족률 {prevdata.get('coverage')}% → 현재 {scores['coverage']}%. 평가 가능한 항목이 달라 총점 변화에 결측 효과가 포함됩니다.")
+                for row in scores['rows']:
+                    prevcat=prevdata.get('categories',{}).get(row['category'],{})
+                    p=number(prevcat.get('score'));n=row['score']
+                    if p is not None and n is not None:
+                        st.write(f"{row['category']}: {p:.1f} → {n:.1f} ({n-p:+.1f}점)")
+        except Exception:
+            st.error('유효한 Stock Analyzer 스냅샷 JSON을 읽지 못했습니다.')
+
+st.divider()
+st.caption('Stock Analyzer v1.3 · CREATED BY K.H.AHN | 시세: Yahoo Finance/FinanceDataReader · 재무/공시: OpenDART · 수급: KRX(pykrx) · 뉴스: Google News RSS · 증권사 리포트: Npay 증권(종목코드 조회)·한경 컨센서스(보조). 외부 서버·뉴스 피드 정책 변경 시 일부 항목이 중단될 수 있습니다. 정량 점수는 이익/수익률 예측, 투자자문 또는 목표주가가 아닙니다.')
+
+        )
+    ].copy() if not quarterly.empty and 'period' in quarterly.columns
+        else pd.DataFrame())
+    if current_quarters.empty:
+        st.info(f'{current_fiscal_year}년 분기 실적이 아직 확인되지 않았습니다. DART 공시 및 데이터 연결 상태를 확인하세요.')
+    else:
+        st.caption("OpenDART 공시 기준 · 각 분기 3개월 실적 · 단위: 억원. 연간 확정치나 연간 누적 실적이 아닙니다.")
+        quarter_columns=[col for col in ('period','revenue','operating_profit','net_income')
+                         if col in current_quarters.columns]
+        current_quarters=current_quarters[quarter_columns]
+        for col in quarter_columns:
+            if col!='period':
+                current_quarters[col]=pd.to_numeric(current_quarters[col],errors='coerce')/1e8
+        st.dataframe(
+            current_quarters.rename(columns={
+                'period':'분기','revenue':'매출액','operating_profit':'영업이익',
+                'net_income':'당기순이익'}).round(1),
+            hide_index=True,use_container_width=True
+        )
+    st.subheader('연간 확정 실적')
     if annual.empty:
         st.warning('OpenDART 연간 재무제표가 없습니다. DART 키, 종목코드, 해당 기업의 공시 여부를 확인하세요.')
     else:
