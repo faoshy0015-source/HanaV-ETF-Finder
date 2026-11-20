@@ -33,6 +33,19 @@ st.markdown("""
 .stApp section[data-testid="stSidebar"] [data-testid="stButton"] button{
  background:#f6fbf8!important;color:#075443!important;
  border:1px solid #b6d9c9!important}
+/* Streamlit wraps sidebar button captions in a Markdown <p>. Override
+   the pale sidebar paragraph text specifically inside enabled buttons. */
+.stApp section[data-testid="stSidebar"] [data-testid="stButton"] button:not(:disabled) p,
+.stApp section[data-testid="stSidebar"] [data-testid="stButton"] button:not(:disabled) span,
+.stApp section[data-testid="stSidebar"] [data-testid="stButton"] button:not(:disabled) [data-testid="stMarkdownContainer"],
+.stApp section[data-testid="stSidebar"] [data-testid="stButton"] button:not(:disabled) [data-testid="stMarkdownContainer"] *{
+ color:#075443!important;
+ opacity:1!important;
+ font-weight:800!important
+}
+.stApp section[data-testid="stSidebar"] [data-testid="stButton"] button:not(:disabled):hover{
+ background:#dff4e8!important;border-color:#008b70!important
+}
 section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"],
 section[data-testid="stSidebar"] [data-testid="stPageLink-NavLink"] p,
 section[data-testid="stSidebar"] a[data-testid="stPageLink-NavLink"]{
