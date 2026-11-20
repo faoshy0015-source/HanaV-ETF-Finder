@@ -37,7 +37,7 @@ html,body,[class*="css"]{font-family:"Pretendard","Noto Sans KR","Malgun Gothic"
 [data-testid="stAppViewContainer"]{
   background:linear-gradient(150deg,#f7fcfa 0%,#f4f8f7 48%,#edf6f0 100%);
 }
-.block-container{padding-top:1.6rem;max-width:1400px;padding-bottom:3rem}
+.block-container{padding-top:5rem;max-width:1400px;padding-bottom:3rem}
 [data-testid="stSidebar"]{
   background:linear-gradient(175deg,#edf5f2 0%,#f4f8f7 56%,#eef6f1 100%)!important;
   border-right:1px solid #cfdfd9;
