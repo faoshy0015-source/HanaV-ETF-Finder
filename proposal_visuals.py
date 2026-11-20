@@ -122,7 +122,7 @@ def score_chart_svg(scores, width=850, height=240):
     h=max(height,30+len(rows)*34)
     name_width=124; left=130; plot_w=width-left-84
     body=[f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {h}" '
-          'role="img" aria-label="실적, 가치평가, 수급, 재무건전성, 주가 추세 및 뉴스 점수">'
+          'role="img" aria-label="실적, 가치평가, 수급, 재무건전성 및 주가 추세 점수">'
           f'<rect width="{width}" height="{h}" fill="{PAPER}" rx="8"/>']
     for i,row in enumerate(rows):
         y=28+i*34
