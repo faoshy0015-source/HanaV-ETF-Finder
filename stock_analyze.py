@@ -186,7 +186,18 @@ def cached_kis_quote(code,appkey,secret,token):return get_kis_quote(code,appkey,
 def cached_listing():return get_listing()
 
 @st.cache_data(ttl=86400,show_spinner=False)
-def cached_corp_codes(key):return get_corp_codes_diagnostic(key)
+def _cached_corp_codes_success(key):
+    listing,error=get_corp_codes_diagnostic(key)
+    if listing.empty:
+        # A timeout must never become a 24-hour cached negative result.
+        raise RuntimeError(error or 'DART 기업코드 응답 없음')
+    return listing
+
+def cached_corp_codes(key):
+    try:
+        return _cached_corp_codes_success(key),''
+    except RuntimeError as exc:
+        return pd.DataFrame(),str(exc)
 
 @st.cache_data(ttl=1800,show_spinner=False)
 def cached_price(code,market):return get_prices(code,market)
@@ -210,7 +221,12 @@ def cached_flow(code):return get_investor_flows(code)
 def cached_turnover(code):return fetch_krx_turnover_context(code)
 
 @st.cache_data(ttl=10800,show_spinner=False)
-def cached_fin(key,corp):return dart_financials(key,corp)
+def cached_fin(key,corp):
+    result=dart_financials(key,corp)
+    if result[0].empty and result[1].empty:
+        # An outage should not stay cached as 'no financial data' for 3 hours.
+        raise RuntimeError('OpenDART 재무제표 응답이 비어 있습니다.')
+    return result
 
 @st.cache_data(ttl=10800,show_spinner=False)
 def cached_full_fy(key,corp,year,scope):return dart_full_fy_metrics(key,corp,year,scope)
@@ -305,6 +321,11 @@ with st.sidebar:
             if diag.get('상태')=='정상':st.success(msg)
             else:st.warning(msg)
     st.divider()
+    if st.button('🔄 DART 재무·공시 다시 조회',key='retry_dart_data',use_container_width=True):
+        cached_fin.clear()
+        cached_disclosures.clear()
+        _cached_corp_codes_success.clear()
+        st.session_state.pop('dart_load_error',None)
     st.caption('• OpenDART·KIS 인증정보는 Streamlit Secrets에서 관리합니다.')
     st.caption('• 데이터는 실시간 체결 시세가 아닐 수 있습니다.')
     st.caption('• 투자 권유가 아닌 참고용 리서치 도구입니다.')
@@ -348,9 +369,9 @@ if not resolved:
     st.stop()
 
 data_issues = []
-if api_key and dart_list.empty:
-    # DART catalogue is optional: a bad response may not prevent analysis
-    # of stocks that already have a verified fallback company code.
+if api_key and dart_list.empty and resolved['code'] not in DART_KNOWN_CORP_CODES:
+    # Do not download the large corporate ZIP for a verified fallback ticker.
+    # Other tickers still require the live company-code mapping.
     with st.spinner('DART 기업코드 확인...'):
         dart_list,dart_error=optional_fetch(
             "DART 상장사 목록",
@@ -421,6 +442,21 @@ with st.status('시세·재무·수급·뉴스 데이터 취합',expanded=False)
             "DART 공시",
             lambda: cached_disclosures(api_key,corp_code),
             pd.DataFrame,data_issues)
+        # Session-level last-known-good fallback. Never call stale values current.
+        snapshot_key=f"_dart_last_good_{resolved['code']}_{corp_code}"
+        if not annual.empty or not quarterly.empty:
+            st.session_state[snapshot_key]=(
+                annual.copy(),quarterly.copy(),fs_scope,
+                datetime.now(ZoneInfo('Asia/Seoul')).strftime('%Y-%m-%d %H:%M')
+            )
+        else:
+            previous=st.session_state.get(snapshot_key)
+            if previous:
+                annual,quarterly,fs_scope,saved_at=previous
+                st.warning(
+                    f'OpenDART 실시간 재조회 실패. 이번 접속에서 {saved_at}에 확인한 '
+                    '이전 재무자료를 표시합니다. 최신 공시 여부를 별도로 확인하세요.'
+                )
     else:
         annual,quarterly,fs_scope,disclosures=pd.DataFrame(),pd.DataFrame(),'',pd.DataFrame()
     financial_detail={}
@@ -513,11 +549,9 @@ elif not corp_code:
     dart_error=st.session_state.get('dart_load_error','')
     st.warning('이 종목의 DART 고유번호를 찾지 못해 재무·공시 분석을 보류합니다.' + (f' DART 오류: {dart_error}' if dart_error else ''))
 elif known_dart_fallback:
-    st.info('DART 전체 기업 목록 조회가 정상 완료되지 않아, 공식 확인된 삼성전자 DART 고유번호로 재무·공시 조회를 시도합니다.')
-    if st.session_state.get('dart_load_error'):
-        st.caption('DART 기업 목록 상태: '+st.session_state['dart_load_error'])
+    st.info('삼성전자는 사전 검증된 DART 고유번호를 사용하므로 전체 기업 목록 재조회 없이 재무·공시 API에 직접 연결합니다.')
     if annual.empty and disclosures.empty:
-        st.warning('고유번호를 확인했지만 DART 재무·공시 응답이 없습니다. 왼쪽 「DART 연결 진단」을 열어 상세 원인을 확인하세요.')
+        st.warning('DART 재무·공시 응답이 없습니다. 왼쪽 「DART 연결 진단」 및 「DART 재무·공시 다시 조회」를 이용해 상태를 확인하세요.')
 if flow_error:st.caption(f'참고: {flow_error}')
 if turnover_error:st.caption(f'참고: {turnover_error}')
 if krx_valuation_error:st.caption('KRX 시가총액 참고: ' + str(krx_valuation_error))
