@@ -102,7 +102,7 @@ if report is None:
         "GitHub Actions 일정 실행과 비공개 Supabase 저장 설정을 완료하세요."
     )
 
-with st.expander("검색 조건 및 수동 실행", expanded=report is None):
+with st.expander("검색 조건 및 수동 실행", expanded=True):
     c1, c2, c3 = st.columns(3)
     with c1:
         selected_day = st.date_input(
