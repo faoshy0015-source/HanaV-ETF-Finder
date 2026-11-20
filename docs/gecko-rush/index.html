@@ -178,8 +178,8 @@ function hostStep(dt,now){nowSec=now;
  if(phase==='roundOver'&&now>=phaseUntil){if(wins[0]>=5||wins[1]>=5){phase='matchOver';matchWinner=wins[0]>=5?0:1;showResult();}else{round++;resetRound();}}
  if(phase!=='playing')return;
  if(now>=roundUntil){const a=players[0].hp,b=players[1].hp;endRound(a>b?0:b>a?1:-1);return;}
+ inputForHost();
  if(role==='practice')botInput(dt,now);
- else inputForHost();
  for(const p of players){tickPlayer(p,dt,now)}
  for(let i=0;i<2;i++){const p=players[i];const o=players[1-i];if(distance(p,o)<.55){const a=Math.atan2(o.y-p.y,o.x-p.x);moveBody(p,-Math.cos(a)*dt,-Math.sin(a)*dt)}}
  if(players[0].hp<=0)endRound(1);else if(players[1].hp<=0)endRound(0);
