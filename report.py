@@ -227,7 +227,8 @@ def render_html(instrument, result, narrative, price, stamp, sources,
 
 
 def snapshot(instrument, result, stamp):
-    return json.dumps({'version':1,'instrument':instrument,'created_at':datetime.now().isoformat(),
+    return json.dumps({'version':2,'scoring_model':'HanaV 5-domain 25/22/22/21/10',
+                       'instrument':instrument,'created_at':datetime.now().isoformat(),
                        'price_asof':stamp,'score':result['total'],'coverage':result['coverage'],
                        'categories':{r['category']:{'score':r['score'],'weight':r['weight'],
                            'covered_weight':r.get('covered_weight',0),
