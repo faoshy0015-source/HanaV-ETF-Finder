@@ -6,6 +6,19 @@ import streamlit as st
 
 st.set_page_config(page_title="HanaV Insight",page_icon="📊",layout="wide",
                    initial_sidebar_state="expanded")
+
+# Register routes on EVERY run, including unauthenticated sessions.
+# Otherwise st.stop() on the login screen prevents Streamlit from knowing
+# /analyze, /etf, etc., and causes "Page not found" after a deployment.
+pages=[
+    st.Page("pages/2_시장_대시보드.py",title="시장 대시보드",icon="📊",default=True),
+    st.Page("etf_finder.py",title="ETF Finder",icon="📈",url_path="etf"),
+    st.Page("stock_analyze.py",title="Analyze",icon="🔎",url_path="analyze"),
+    st.Page("pages/0_전종목_수급_레이더.py",title="전종목 수급 레이더",icon="📡",url_path="flow-radar"),
+    st.Page("pages/1_수급_전환_검색.py",title="수급전환 검색",icon="🔄",url_path="flow-reversal"),
+]
+page=st.navigation(pages,position="hidden")
+
 st.markdown("""
 <style>
 @import url('https://cdn.jsdelivr.net/gh/innks/NanumSquareRound@master/nanumsquareround.css');
@@ -106,14 +119,6 @@ with st.sidebar:
                 unsafe_allow_html=True)
     st.divider()
 
-pages=[
-    st.Page("pages/2_시장_대시보드.py",title="시장 대시보드",icon="📊",default=True),
-    st.Page("etf_finder.py",title="ETF Finder",icon="📈",url_path="etf"),
-    st.Page("stock_analyze.py",title="Analyze",icon="🔎",url_path="analyze"),
-    st.Page("pages/0_전종목_수급_레이더.py",title="전종목 수급 레이더",icon="📡",url_path="flow-radar"),
-    st.Page("pages/1_수급_전환_검색.py",title="수급전환 검색",icon="🔄",url_path="flow-reversal"),
-]
-page=st.navigation(pages,position="hidden")
 with st.sidebar:
     for path,title,icon in (
         ("pages/2_시장_대시보드.py","시장 대시보드","📊"),
