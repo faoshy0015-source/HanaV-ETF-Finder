@@ -722,8 +722,8 @@ with t2:
                 else:st.caption('기준 연간 영업이익이 0 이하이므로 단순 성장률 외삽을 제공하지 않습니다.')
     if not quarterly.empty:
         st.caption('분기 실적은 DART 당기 3개월 금액 사용. 4분기는 사업보고서 연간 금액에서 3분기 누적을 차감해 복원할 수 있는 경우만 표시합니다.')
-    st.subheader('재무건전성 검증 항목 (총 20점)')
     financial_row=next(r for r in scores['rows'] if r['category']=='재무건전성')
+    st.subheader(f"재무건전성 검증 항목 (총 {financial_row['weight']:g}점)")
     financial_parts=financial_row.get('components',[])
     if financial_parts:
         st.dataframe(pd.DataFrame([{
@@ -732,8 +732,8 @@ with t2:
             '획득 점수':f"{x['earned']:.2f}" if x['earned'] is not None else '미산출',
             '결과':x['status'],
         } for x in financial_parts]),hide_index=True,use_container_width=True)
-        st.caption(f"실제 검증 {financial_row.get('covered_weight',0):g}/20점 배점 · "
-                   "영업현금흐름·이자보상·유동비율을 확인할 수 없으면 20점 전체를 채운 것으로 보지 않습니다.")
+        st.caption(f"실제 검증 {financial_row.get('covered_weight',0):g}/{financial_row['weight']:g}점 배점 · "
+                   "영업현금흐름·이자보상·유동비율을 확인할 수 없으면 전체 배점이 평가된 것으로 보지 않습니다.")
         with st.expander('재무 항목 산식·데이터 출처'):
             for x in financial_parts:
                 st.markdown(f"**{x['name']} · {x['status']} ({x['covered_weight']}/{x['weight']}점)**")
@@ -917,8 +917,8 @@ with t3:
         if krx_valuation_error:
             st.caption('KRX 조회 상태: '+krx_valuation_error)
         st.caption('Yahoo Finance 제공 지표는 결측/지연 가능. Forward PER은 제공처 추정치이며 공식 증권사 컨센서스 검증을 대체하지 않습니다.')
-        st.markdown('#### 밸류에이션 점수 구성 (총 20점)')
         valuation_row=next(r for r in scores['rows'] if r['category']=='밸류에이션')
+        st.markdown(f"#### 밸류에이션 점수 구성 (총 {valuation_row['weight']:g}점)")
         components=valuation_row.get('components',[])
         if components:
             st.dataframe(pd.DataFrame([{
@@ -928,7 +928,7 @@ with t3:
                 '획득 점수':f"{part['earned']:.2f}" if part['earned'] is not None else '미산출',
                 '진행':part['status'],
             } for part in components]),hide_index=True,use_container_width=True)
-            st.caption(f"실제 평가 {valuation_row.get('covered_weight',0):g}/20점 배점 · "
+            st.caption(f"실제 평가 {valuation_row.get('covered_weight',0):g}/{valuation_row['weight']:g}점 배점 · "
                        "누락된 세부 항목은 0점 또는 중립점으로 대체하지 않습니다.")
             with st.expander('각 항목 평가 근거 · 필요한 데이터'):
                 for part in components:
@@ -975,7 +975,7 @@ with t3:
                     st.caption(f'{d}거래일: 외국인 {won(fnet)} / 기관 {won(inet)}')
             st.caption('순매수 단위는 원입니다. KRX 조회 가능 범위에 따라 데이터가 달라질 수 있습니다.')
         flow_row=next(row for row in scores['rows'] if row['category']=='수급')
-        st.markdown('#### 시가총액·거래대금 보정 수급점수 (15점)')
+        st.markdown('#### 시가총액·거래대금 보정 수급점수 (22점)')
         flow_parts=flow_row.get('components',[])
         if flow_parts:
             st.dataframe(pd.DataFrame([{
@@ -983,7 +983,7 @@ with t3:
                 '반영 배점':part['covered_weight'],
                 '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
             } for part in flow_parts]),hide_index=True,use_container_width=True)
-            st.caption(f"평가된 배점 {flow_row.get('covered_weight',0):g}/15점 · "
+            st.caption(f"평가된 배점 {flow_row.get('covered_weight',0):g}/{flow_row['weight']:g}점 · "
                        "같은 날짜의 거래대금·시총을 기준으로 순매수 규모를 정규화합니다.")
             with st.expander('순매수 강도 계산 근거'):
                 for part in flow_parts:
@@ -995,40 +995,11 @@ with t3:
                            '시총은 보통주 기준일 수 있으며 미수신 항목은 점수에서 제외됩니다.')
 
 with t4:
-    st.subheader('공시·뉴스 기반 이벤트 모멘텀')
-    event_row=next(r for r in scores['rows'] if r['category']=='뉴스 모멘텀')
-    parts=event_row.get('components',[])
-    if parts:
-        st.dataframe(pd.DataFrame([{
-            '구성':part['name'],'배점':part['weight'],
-            '검증 배점':part['covered_weight'],
-            '점수':f"{part['score']:.1f}" if part['score'] is not None else '미산출',
-            '판정':part['status'],
-        } for part in parts]),hide_index=True,use_container_width=True)
-        st.caption(f"검증 {event_row.get('covered_weight',0):g}/10점 배점. "
-                   "공시 제목(6점)과 서로 다른 매체의 최근 뉴스 제목(4점)으로만 평가합니다. "
-                   "기사 본문을 읽거나 이벤트의 재무영향을 검증하지 않은 낮은 신뢰도의 참고 지표입니다.")
-        with st.expander('모멘텀 평가 근거와 한계'):
-            for part in parts:
-                st.markdown(f"**{part['name']} · {part['status']}**")
-                st.caption(part['evidence'])
-    events=event_row.get('events',[])
-    if events:
-        st.markdown('**탐지된 주요 이벤트 (원문 바로가기)**')
-        for item in sorted(events,key=lambda event:event.get('date',''),reverse=True)[:12]:
-            link=str(item.get('link',''))
-            title=str(item.get('title',''))
-            if link.startswith(('https://','http://')):
-                st.markdown(f"[{title}]({link})")
-            else:
-                st.write(title)
-            st.caption(f"{item.get('date','')} · {item.get('source','')} · "
-                       f"{item.get('type','')} | {item.get('reason','')}")
-    else:
-        st.info('평가 가능한 주요 이벤트가 확인되지 않았습니다. 이는 호재나 악재가 없다는 확정 판단이 아닙니다.')
+    st.subheader('뉴스 · 공시 (점수 미반영)')
+    st.caption('뉴스와 DART 공시는 투자 참고자료로만 제공되며 종합 점수, 데이터 충족률 및 투자 판정에 반영하지 않습니다.')
     st.divider()
     st.subheader('최근 뉴스')
-    if news.empty:st.info('뉴스 RSS 조회 결과가 없습니다. DART 공시 이벤트는 별도로 평가될 수 있습니다.')
+    if news.empty:st.info('뉴스 RSS 조회 결과가 없습니다. 공시 목록과는 별도 출처입니다.')
     else:
         for _,item in news.head(16).iterrows():
             link=str(item.get('link',''))
