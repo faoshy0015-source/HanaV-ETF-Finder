@@ -107,8 +107,8 @@ with st.sidebar:
     st.divider()
 
 pages=[
-    st.Page("etf_finder.py",title="ETF Finder",icon="📈",url_path="etf"),
     st.Page("pages/2_시장_대시보드.py",title="시장 대시보드",icon="📊",default=True),
+    st.Page("etf_finder.py",title="ETF Finder",icon="📈",url_path="etf"),
     st.Page("stock_analyze.py",title="Analyze",icon="🔎",url_path="analyze"),
     st.Page("pages/0_전종목_수급_레이더.py",title="전종목 수급 레이더",icon="📡",url_path="flow-radar"),
     st.Page("pages/1_수급_전환_검색.py",title="수급전환 검색",icon="🔄",url_path="flow-reversal"),
@@ -116,8 +116,8 @@ pages=[
 page=st.navigation(pages,position="hidden")
 with st.sidebar:
     for path,title,icon in (
-        ("etf_finder.py","ETF Finder","📈"),
         ("pages/2_시장_대시보드.py","시장 대시보드","📊"),
+        ("etf_finder.py","ETF Finder","📈"),
         ("stock_analyze.py","Analyze","🔎"),
         ("pages/0_전종목_수급_레이더.py","전종목 수급 레이더","📡"),
         ("pages/1_수급_전환_검색.py","수급전환 검색","🔄"),
